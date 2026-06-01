@@ -9,7 +9,7 @@ const fs = require('fs');
 // =============================================
 //  INSTAGRAM
 // =============================================
-const IG_USER = 'douglassouza.com@gmail.com';
+const IG_USER = '31993889999';
 const IG_PASS = 'Rb@103407';
 
 const ig = new IgApiClient();
