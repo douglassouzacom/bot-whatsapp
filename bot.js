@@ -3,6 +3,38 @@ const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const http = require('http');
+const { IgApiClient } = require('instagram-private-api');
+const fs = require('fs');
+
+// =============================================
+//  INSTAGRAM
+// =============================================
+const IG_USER = 'repasseminasbrasil';
+const IG_PASS = 'Rb@103407';
+
+const ig = new IgApiClient();
+let igConectado = false;
+
+async function conectarInstagram() {
+    try {
+        ig.state.generateDevice(IG_USER);
+        await ig.account.login(IG_USER, IG_PASS);
+        igConectado = true;
+        console.log('✅ Instagram conectado: @' + IG_USER);
+    } catch (err) {
+        console.error('Erro ao conectar Instagram:', err.message);
+    }
+}
+
+async function postarInstagram(buffer, legenda) {
+    if (!igConectado) return;
+    try {
+        await ig.publish.photo({ file: buffer, caption: legenda });
+        console.log('📸 Postado no Instagram!');
+    } catch (err) {
+        console.error('Erro ao postar no Instagram:', err.message);
+    }
+}
 
 let ultimoQR = null;
 
@@ -193,6 +225,12 @@ async function iniciarBot() {
                         mimetype,
                         caption: textoAjustado,
                     });
+
+                    // postar foto no Instagram (somente imagens, sem vendido/reservado)
+                    if (tipoMidia === 'image') {
+                        const legendaIG = textoAjustado + '\n\n#repasse #repasseminasbrasil #carros #bh #veiculos #seminovo';
+                        await postarInstagram(buffer, legendaIG);
+                    }
                 } else if (textoAjustado.trim()) {
                     await sock.sendMessage(grupoDestinoId, { text: textoAjustado });
                 }
@@ -205,4 +243,5 @@ async function iniciarBot() {
     });
 }
 
+conectarInstagram();
 iniciarBot();
