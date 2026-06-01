@@ -1,0 +1,4 @@
+2026/06/01-15:27:18.287 4e84 Creating DB C:\Users\Universo AGV\bot-whatsapp\.wwebjs_auth\session\Default\shared_proto_db\metadata since it was missing.
+2026/06/01-15:27:18.304 4e84 Reusing MANIFEST C:\Users\Universo AGV\bot-whatsapp\.wwebjs_auth\session\Default\shared_proto_db\metadata/MANIFEST-000001
+2026/06/01-15:27:18.305 4e84 Recovering log #3
+2026/06/01-15:27:18.306 4e84 Reusing old log C:\Users\Universo AGV\bot-whatsapp\.wwebjs_auth\session\Default\shared_proto_db\metadata/000003.log 

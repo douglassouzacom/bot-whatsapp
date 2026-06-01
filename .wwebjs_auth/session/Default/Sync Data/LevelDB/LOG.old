@@ -1,0 +1,4 @@
+2026/06/01-15:27:18.247 2838 Creating DB C:\Users\Universo AGV\bot-whatsapp\.wwebjs_auth\session\Default\Sync Data\LevelDB since it was missing.
+2026/06/01-15:27:18.271 2838 Reusing MANIFEST C:\Users\Universo AGV\bot-whatsapp\.wwebjs_auth\session\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/06/01-15:27:18.271 2838 Recovering log #3
+2026/06/01-15:27:18.272 2838 Reusing old log C:\Users\Universo AGV\bot-whatsapp\.wwebjs_auth\session\Default\Sync Data\LevelDB/000003.log 
