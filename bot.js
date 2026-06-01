@@ -3,38 +3,26 @@ const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const http = require('http');
-const { IgApiClient } = require('instagram-private-api');
-const fs = require('fs');
 
 // =============================================
-//  INSTAGRAM
+//  MAKE WEBHOOK (Instagram)
 // =============================================
-const IG_USER = '31993889999';
-const IG_PASS = 'Rb@103407';
+const MAKE_WEBHOOK = 'https://hook.us2.make.com/r6cbsk7od1ediwz5glih8657khcpzmd0';
 
-const ig = new IgApiClient();
-let igConectado = false;
-
-async function conectarInstagram() {
+async function enviarParaMake(buffer, legenda) {
     try {
-        ig.state.generateDevice(IG_USER);
-        await ig.account.login(IG_USER, IG_PASS);
-        igConectado = true;
-        console.log('✅ Instagram conectado: @' + IG_USER);
+        const fetch = (await import('node-fetch')).default;
+        const FormData = (await import('form-data')).default;
+        const form = new FormData();
+        form.append('caption', legenda);
+        form.append('image', buffer, { filename: 'anuncio.jpg', contentType: 'image/jpeg' });
+        await fetch(MAKE_WEBHOOK, { method: 'POST', body: form });
+        console.log('📤 Anúncio enviado para o Make!');
     } catch (err) {
-        console.error('Erro ao conectar Instagram:', err.message);
+        console.error('Erro ao enviar para Make:', err.message);
     }
 }
 
-async function postarInstagram(buffer, legenda) {
-    if (!igConectado) return;
-    try {
-        await ig.publish.photo({ file: buffer, caption: legenda });
-        console.log('📸 Postado no Instagram!');
-    } catch (err) {
-        console.error('Erro ao postar no Instagram:', err.message);
-    }
-}
 
 let ultimoQR = null;
 
@@ -226,10 +214,10 @@ async function iniciarBot() {
                         caption: textoAjustado,
                     });
 
-                    // postar foto no Instagram (somente imagens, sem vendido/reservado)
+                    // enviar para Make para postar no Instagram
                     if (tipoMidia === 'image') {
                         const legendaIG = textoAjustado + '\n\n#repasse #repasseminasbrasil #carros #bh #veiculos #seminovo';
-                        await postarInstagram(buffer, legendaIG);
+                        await enviarParaMake(buffer, legendaIG);
                     }
                 } else if (textoAjustado.trim()) {
                     await sock.sendMessage(grupoDestinoId, { text: textoAjustado });
@@ -243,5 +231,4 @@ async function iniciarBot() {
     });
 }
 
-conectarInstagram();
 iniciarBot();
