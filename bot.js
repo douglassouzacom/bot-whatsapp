@@ -8,16 +8,29 @@ const http = require('http');
 //  MAKE WEBHOOK (Instagram)
 // =============================================
 const MAKE_WEBHOOK = 'https://hook.us2.make.com/r6cbsk7od1ediwz5glih8657khcpzmd0';
+const IMGUR_CLIENT_ID = 'f4fb2a3b0b369b0'; // client id público do Imgur
+
+async function uploadImgur(buffer) {
+    try {
+        const axios = require('axios');
+        const base64 = buffer.toString('base64');
+        const res = await axios.post('https://api.imgur.com/3/image', { image: base64, type: 'base64' }, {
+            headers: { Authorization: `Client-ID ${IMGUR_CLIENT_ID}` }
+        });
+        return res.data.data.link;
+    } catch (err) {
+        console.error('Erro ao fazer upload no Imgur:', err.message);
+        return null;
+    }
+}
 
 async function enviarParaMake(buffer, legenda) {
     try {
-        const fetch = (await import('node-fetch')).default;
-        const FormData = (await import('form-data')).default;
-        const form = new FormData();
-        form.append('caption', legenda);
-        form.append('image', buffer, { filename: 'anuncio.jpg', contentType: 'image/jpeg' });
-        await fetch(MAKE_WEBHOOK, { method: 'POST', body: form });
-        console.log('📤 Anúncio enviado para o Make!');
+        const axios = require('axios');
+        const imageUrl = await uploadImgur(buffer);
+        if (!imageUrl) return;
+        await axios.post(MAKE_WEBHOOK, { caption: legenda, imageUrl });
+        console.log('📤 Anúncio enviado para o Make! URL: ' + imageUrl);
     } catch (err) {
         console.error('Erro ao enviar para Make:', err.message);
     }
