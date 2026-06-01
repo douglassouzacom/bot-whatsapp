@@ -1,6 +1,24 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const pino = require('pino');
+const http = require('http');
+
+let ultimoQR = null;
+
+// servidor web simples para exibir o QR Code via navegador
+http.createServer(async (req, res) => {
+    if (ultimoQR) {
+        const qrImg = await QRCode.toDataURL(ultimoQR);
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(`<html><body style="text-align:center;padding:40px"><h2>Escaneie o QR Code com seu WhatsApp</h2><img src="${qrImg}"/><p>Atualize a página se o QR expirar</p></body></html>`);
+    } else {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><body><h2>Bot ja conectado ou aguardando QR...</h2></body></html>');
+    }
+}).listen(process.env.PORT || 3000, () => {
+    console.log('Servidor QR rodando na porta ' + (process.env.PORT || 3000));
+});
 
 // =============================================
 //  CONFIGURAÇÃO
@@ -83,7 +101,8 @@ async function iniciarBot() {
 
     sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
         if (qr) {
-            console.log('\n📱 Escaneie o QR Code abaixo com seu WhatsApp:\n');
+            ultimoQR = qr;
+            console.log('\n📱 Acesse a URL do servico no Render para escanear o QR Code!\n');
             qrcode.generate(qr, { small: true });
         }
         if (connection === 'open') {
@@ -134,6 +153,32 @@ async function iniciarBot() {
                     || msg.message?.imageMessage?.caption
                     || msg.message?.videoMessage?.caption
                     || '';
+
+                const textoLower = texto.toLowerCase();
+                const isVendido   = textoLower.includes('vendido');
+                const isReservado = textoLower.includes('reservado');
+
+                // mensagem de status (vendido/reservado) — reencaminha com destaque
+                if (isVendido || isReservado) {
+                    const status = isVendido ? '🚫 *VENDIDO*' : '⏳ *RESERVADO*';
+                    const temMidia = msg.message?.imageMessage || msg.message?.videoMessage;
+
+                    if (temMidia) {
+                        const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
+                        const tipoMidia = msg.message.imageMessage ? 'image' : 'video';
+                        const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
+                        const caption   = msg.message[tipoMidia + 'Message']?.caption || '';
+                        await sock.sendMessage(grupoDestinoId, {
+                            [tipoMidia]: buffer,
+                            mimetype,
+                            caption: `${status}\n${caption}`,
+                        });
+                    } else {
+                        await sock.sendMessage(grupoDestinoId, { text: `${status}\n${texto}` });
+                    }
+                    console.log(`📢 Status reencaminhado: ${status}`);
+                    continue;
+                }
 
                 const textoAjustado = ajustarPrecos(texto);
                 const temMidia = msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage;
