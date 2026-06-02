@@ -8,7 +8,7 @@ const http = require('http');
 //  MAKE WEBHOOK (Instagram)
 // =============================================
 const MAKE_WEBHOOK = 'https://hook.us2.make.com/r6cbsk7od1ediwz5glih8657khcpzmd0';
-const IMGUR_CLIENT_ID = 'f4fb2a3b0b369b0'; // client id público do Imgur
+const IMGUR_CLIENT_ID = '546c25a59c58ad7'; // client id Imgur
 
 async function uploadImgur(buffer) {
     try {
