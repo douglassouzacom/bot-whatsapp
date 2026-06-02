@@ -194,13 +194,34 @@ async function iniciarBot() {
                 // mensagem de status (vendido/reservado) — reencaminha com destaque
                 if (isVendido || isReservado) {
                     const status = isVendido ? '🚫 *VENDIDO*' : '⏳ *RESERVADO*';
+
+                    // verifica se tem mídia na própria mensagem
                     const temMidia = msg.message?.imageMessage || msg.message?.videoMessage;
+
+                    // verifica se é uma resposta a uma mensagem com foto (mensagem citada)
+                    const msgCitada = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const temMidiaCitada = msgCitada?.imageMessage || msgCitada?.videoMessage;
 
                     if (temMidia) {
                         const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
                         const tipoMidia = msg.message.imageMessage ? 'image' : 'video';
                         const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
                         const caption   = msg.message[tipoMidia + 'Message']?.caption || '';
+                        await sock.sendMessage(grupoDestinoId, {
+                            [tipoMidia]: buffer,
+                            mimetype,
+                            caption: `${status}\n${caption}`,
+                        });
+                    } else if (temMidiaCitada) {
+                        // reencaminha a foto da mensagem original com o status
+                        const tipoMidia = msgCitada.imageMessage ? 'image' : 'video';
+                        const mimetype  = msgCitada[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
+                        const caption   = msgCitada[tipoMidia + 'Message']?.caption || '';
+                        const buffer    = await downloadMediaMessage(
+                            { message: msgCitada, key: msg.key },
+                            'buffer', {},
+                            { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
+                        );
                         await sock.sendMessage(grupoDestinoId, {
                             [tipoMidia]: buffer,
                             mimetype,
