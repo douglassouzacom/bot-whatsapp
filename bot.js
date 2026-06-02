@@ -27,10 +27,19 @@ async function uploadImgur(buffer) {
 async function enviarParaMake(buffer, legenda) {
     try {
         const axios = require('axios');
-        const imageUrl = await uploadImgur(buffer);
-        if (!imageUrl) return;
-        await axios.post(MAKE_WEBHOOK, { caption: legenda, imageUrl });
-        console.log('📤 Anúncio enviado para o Make! URL: ' + imageUrl);
+
+        // tenta Imgur primeiro
+        let imageUrl = await uploadImgur(buffer);
+
+        // se falhar, envia base64 direto
+        if (!imageUrl) {
+            const base64 = buffer.toString('base64');
+            imageUrl = `data:image/jpeg;base64,${base64}`;
+            console.log('⚠️ Imgur falhou, enviando base64');
+        }
+
+        const res = await axios.post(MAKE_WEBHOOK, { caption: legenda, imageUrl });
+        console.log('📤 Anúncio enviado para o Make! Status: ' + res.status);
     } catch (err) {
         console.error('Erro ao enviar para Make:', err.message);
     }
