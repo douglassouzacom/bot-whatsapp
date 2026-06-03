@@ -3,6 +3,20 @@ const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const http = require('http');
+const sharp = require('sharp');
+
+// redimensiona imagem para proporção 1:1 (1080x1080) aceita pelo Instagram
+async function prepararImagemInstagram(buffer) {
+    try {
+        return await sharp(buffer)
+            .resize(1080, 1080, { fit: 'cover', position: 'centre' })
+            .jpeg({ quality: 90 })
+            .toBuffer();
+    } catch (err) {
+        console.error('Erro ao redimensionar imagem:', err.message);
+        return buffer;
+    }
+}
 
 // =============================================
 //  MAKE WEBHOOK (Instagram)
@@ -260,7 +274,8 @@ async function iniciarBot() {
                     // enviar para Make para postar no Instagram
                     if (tipoMidia === 'image') {
                         const legendaIG = textoAjustado + '\n\n#repasse #repasseminasbrasil #carros #bh #veiculos #seminovo';
-                        await enviarParaMake(buffer, legendaIG);
+                        const bufferIG = await prepararImagemInstagram(buffer);
+                        await enviarParaMake(bufferIG, legendaIG);
                     }
                 } else if (textoAjustado.trim()) {
                     await sock.sendMessage(grupoDestinoId, { text: textoAjustado });
