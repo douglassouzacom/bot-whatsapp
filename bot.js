@@ -9,8 +9,8 @@ const sharp = require('sharp');
 async function prepararImagemInstagram(buffer) {
     try {
         return await sharp(buffer)
-            .resize(1080, 1080, { fit: 'cover', position: 'centre' })
-            .jpeg({ quality: 90 })
+            .resize(1080, 1080, { fit: 'contain', background: { r: 0, g: 0, b: 0 } })
+            .jpeg({ quality: 95 })
             .toBuffer();
     } catch (err) {
         console.error('Erro ao redimensionar imagem:', err.message);
