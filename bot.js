@@ -108,6 +108,7 @@ async function enviarNovaFotoParaMake(buffer, legenda, stanzaId, tentativa = 1) 
         const postId = res.data?.postId || res.data?.id || null;
         if (postId && stanzaId) {
             instagramPosts.set(stanzaId, { postId, caption: legenda, hora: new Date().toISOString() });
+            ultimoPostInstagram = { postId, caption: legenda };
             console.log(`🔖 Instagram postId armazenado: ${postId} (msg: ${stanzaId})`);
         }
 
@@ -155,6 +156,9 @@ async function marcarVendidoNoInstagram(stanzaIdCitado) {
         registrarErro('Make/Vendido', err.message);
     }
 }
+
+// Último post do Instagram (para teste manual)
+let ultimoPostInstagram = null; // { postId, caption }
 
 // Painel HTML de monitoramento
 function gerarHtmlStatus(qrDataUrl) {
@@ -219,6 +223,13 @@ function gerarHtmlStatus(qrDataUrl) {
       <li>📸 Último Instagram: ${stats.ultimoInstagram || 'nenhum ainda'}</li>
       <li>🕐 Bot iniciado em: ${new Date(stats.iniciadoEm).toLocaleString('pt-BR')}</li>
     </ul>
+
+    <h2>🧪 Teste Manual</h2>
+    ${ultimoPostInstagram
+        ? `<p style="color:#aaa">Último post: <b style="color:#fff">${ultimoPostInstagram.caption.slice(0, 60)}...</b></p>
+           <a href="/vendido-teste" style="display:inline-block;background:#ff4444;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:bold;margin-top:8px">✅ Marcar último post como VENDIDO</a>`
+        : `<p style="color:#888">Nenhum post feito ainda nesta sessão.<br>Aguarde um anúncio chegar do grupo Ronei Repasse.</p>`
+    }
     </body></html>`;
 }
 
@@ -226,6 +237,39 @@ let ultimoQR = null;
 
 // Servidor web — painel + QR Code + serviço de imagens
 http.createServer(async (req, res) => {
+    // Rota de teste VENDIDO: /vendido-teste
+    if (req.url === '/vendido-teste') {
+        if (ultimoPostInstagram) {
+            try {
+                const axios = require('axios');
+                await axios.post(MAKE_WEBHOOK, {
+                    action: 'vendido',
+                    postId: ultimoPostInstagram.postId,
+                    caption: ultimoPostInstagram.caption,
+                }, { timeout: 15000 });
+                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(`<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=/"></head>
+                <body style="background:#1a1a2e;color:#eee;font-family:Arial;text-align:center;padding:60px">
+                <h2 style="color:#00ff88">✅ Comando VENDIDO enviado com sucesso!</h2>
+                <p>Post ID: <b>${ultimoPostInstagram.postId}</b></p>
+                <p>Redirecionando para o painel...</p></body></html>`);
+                registrarSucesso('Teste/Vendido', `Post ${ultimoPostInstagram.postId} marcado via painel`);
+            } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(`<html><body style="background:#1a1a2e;color:#ff4444;font-family:Arial;text-align:center;padding:60px">
+                <h2>❌ Erro: ${err.message}</h2><a href="/" style="color:#00d4ff">Voltar</a></body></html>`);
+            }
+        } else {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(`<html><head><meta http-equiv="refresh" content="3;url=/"></head>
+            <body style="background:#1a1a2e;color:#ffaa00;font-family:Arial;text-align:center;padding:60px">
+            <h2>⚠️ Nenhum post feito nesta sessão ainda.</h2>
+            <p>Aguarde um anúncio chegar do grupo Ronei Repasse.</p>
+            <a href="/" style="color:#00d4ff">Voltar</a></body></html>`);
+        }
+        return;
+    }
+
     // Rota de imagens: /img/:token
     if (req.url && req.url.startsWith('/img/')) {
         const token = req.url.slice(5);
