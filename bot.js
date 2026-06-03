@@ -5,6 +5,108 @@ const pino = require('pino');
 const http = require('http');
 const sharp = require('sharp');
 
+// =============================================
+//  SISTEMA DE MONITORAMENTO E AUTO-REPARO
+// =============================================
+const stats = {
+    iniciadoEm: new Date().toISOString(),
+    mensagensRecebidas: 0,
+    mensagensReencaminhadas: 0,
+    instagramPostado: 0,
+    instagramFalha: 0,
+    erros: [],
+    ultimaMensagem: null,
+    ultimoInstagram: null,
+    reconexoes: 0,
+    status: 'iniciando',
+    imgurFalhas: 0,
+    imgurSucessos: 0,
+    filaRetry: [],      // fila de reenvios pendentes
+};
+
+function registrarErro(contexto, mensagem) {
+    const entrada = { hora: new Date().toLocaleTimeString('pt-BR'), contexto, mensagem };
+    stats.erros.unshift(entrada);
+    if (stats.erros.length > 20) stats.erros.pop(); // mantém só os 20 últimos
+    console.error(`❌ [${contexto}] ${mensagem}`);
+}
+
+function registrarSucesso(contexto, mensagem) {
+    console.log(`✅ [${contexto}] ${mensagem}`);
+}
+
+// Painel HTML de monitoramento
+function gerarHtmlStatus(qrDataUrl) {
+    const uptime = Math.floor((Date.now() - new Date(stats.iniciadoEm)) / 1000);
+    const horas  = Math.floor(uptime / 3600);
+    const mins   = Math.floor((uptime % 3600) / 60);
+    const segs   = uptime % 60;
+
+    if (qrDataUrl) {
+        return `<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="10">
+        <style>body{font-family:Arial,sans-serif;text-align:center;padding:40px;background:#1a1a2e;color:#eee}
+        h2{color:#00d4ff}img{border:4px solid #00d4ff;border-radius:8px;padding:10px;background:#fff}</style></head>
+        <body><h2>📱 Escaneie o QR Code com seu WhatsApp</h2>
+        <img src="${qrDataUrl}"/><p>Página atualiza automaticamente a cada 10 segundos</p></body></html>`;
+    }
+
+    const corStatus = stats.status === 'conectado' ? '#00ff88' : stats.status === 'desconectado' ? '#ff4444' : '#ffaa00';
+    const errosHtml = stats.erros.length === 0
+        ? '<li style="color:#00ff88">Nenhum erro registrado ✅</li>'
+        : stats.erros.map(e => `<li><b>${e.hora}</b> [${e.contexto}] ${e.mensagem}</li>`).join('');
+
+    const filaHtml = stats.filaRetry.length === 0
+        ? '<li style="color:#00ff88">Fila vazia ✅</li>'
+        : stats.filaRetry.map(f => `<li>${f.tipo} — tentativa ${f.tentativas}</li>`).join('');
+
+    return `<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="15">
+    <style>
+      body{font-family:Arial,sans-serif;padding:20px;background:#1a1a2e;color:#eee;margin:0}
+      h1{color:#00d4ff;font-size:22px} h2{color:#aaa;font-size:16px;border-bottom:1px solid #444;padding-bottom:5px}
+      .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:20px 0}
+      .card{background:#16213e;border-radius:10px;padding:16px;text-align:center;border:1px solid #0f3460}
+      .num{font-size:32px;font-weight:bold;color:#00d4ff} .label{font-size:12px;color:#888;margin-top:4px}
+      .status{display:inline-block;padding:4px 14px;border-radius:20px;font-weight:bold;font-size:14px}
+      ul{background:#16213e;border-radius:8px;padding:12px 12px 12px 28px;max-height:160px;overflow-y:auto}
+      li{font-size:13px;margin:3px 0;color:#ccc}
+    </style></head>
+    <body>
+    <h1>🤖 Minas Brasil Repasse — Painel do Bot</h1>
+    <p>Status: <span class="status" style="background:${corStatus};color:#000">${stats.status.toUpperCase()}</span>
+    &nbsp;|&nbsp; ⏱ Uptime: ${horas}h ${mins}m ${segs}s
+    &nbsp;|&nbsp; 🔄 Reconexões: ${stats.reconexoes}
+    &nbsp;|&nbsp; <small>Atualiza em 15s</small></p>
+
+    <div class="grid">
+      <div class="card"><div class="num">${stats.mensagensRecebidas}</div><div class="label">📨 Mensagens Recebidas</div></div>
+      <div class="card"><div class="num">${stats.mensagensReencaminhadas}</div><div class="label">📤 Reencaminhadas</div></div>
+      <div class="card"><div class="num">${stats.instagramPostado}</div><div class="label">📸 Instagram OK</div></div>
+      <div class="card"><div class="num">${stats.instagramFalha}</div><div class="label">❌ Instagram Falha</div></div>
+      <div class="card"><div class="num">${stats.imgurSucessos}</div><div class="label">☁️ Imgur OK</div></div>
+      <div class="card"><div class="num">${stats.imgurFalhas}</div><div class="label">☁️ Imgur Falha</div></div>
+    </div>
+
+    <h2>📋 Últimos Erros</h2>
+    <ul>${errosHtml}</ul>
+
+    <h2>🔁 Fila de Reenvio (retry)</h2>
+    <ul>${filaHtml}</ul>
+
+    <h2>📌 Últimas Atividades</h2>
+    <ul>
+      <li>💬 Última mensagem: ${stats.ultimaMensagem || 'nenhuma ainda'}</li>
+      <li>📸 Último Instagram: ${stats.ultimoInstagram || 'nenhum ainda'}</li>
+      <li>🕐 Bot iniciado em: ${new Date(stats.iniciadoEm).toLocaleString('pt-BR')}</li>
+    </ul>
+    </body></html>`;
+}
+
+// =============================================
+//  MAKE WEBHOOK (Instagram)
+// =============================================
+const MAKE_WEBHOOK    = 'https://hook.us2.make.com/r6cbsk7od1ediwz5glih8657khcpzmd0';
+const IMGUR_CLIENT_ID = '546c25a59c58ad7';
+
 // redimensiona imagem para proporção 1:1 (1080x1080) aceita pelo Instagram
 async function prepararImagemInstagram(buffer) {
     try {
@@ -13,67 +115,84 @@ async function prepararImagemInstagram(buffer) {
             .jpeg({ quality: 95 })
             .toBuffer();
     } catch (err) {
-        console.error('Erro ao redimensionar imagem:', err.message);
+        registrarErro('Sharp', err.message);
         return buffer;
     }
 }
-
-// =============================================
-//  MAKE WEBHOOK (Instagram)
-// =============================================
-const MAKE_WEBHOOK = 'https://hook.us2.make.com/r6cbsk7od1ediwz5glih8657khcpzmd0';
-const IMGUR_CLIENT_ID = '546c25a59c58ad7'; // client id Imgur
 
 async function uploadImgur(buffer) {
     try {
         const axios = require('axios');
         const base64 = buffer.toString('base64');
-        const res = await axios.post('https://api.imgur.com/3/image', { image: base64, type: 'base64' }, {
-            headers: { Authorization: `Client-ID ${IMGUR_CLIENT_ID}` }
-        });
+        const res = await axios.post('https://api.imgur.com/3/image',
+            { image: base64, type: 'base64' },
+            { headers: { Authorization: `Client-ID ${IMGUR_CLIENT_ID}` }, timeout: 15000 }
+        );
+        stats.imgurSucessos++;
         return res.data.data.link;
     } catch (err) {
-        console.error('Erro ao fazer upload no Imgur:', err.message);
+        stats.imgurFalhas++;
+        registrarErro('Imgur', err.message);
         return null;
     }
 }
 
-async function enviarParaMake(buffer, legenda) {
+// Envia para o Make com retry automático (até 3 tentativas)
+async function enviarParaMake(buffer, legenda, tentativa = 1) {
     try {
         const axios = require('axios');
 
-        // tenta Imgur primeiro
         let imageUrl = await uploadImgur(buffer);
 
-        // se falhar, envia base64 direto
         if (!imageUrl) {
             const base64 = buffer.toString('base64');
             imageUrl = `data:image/jpeg;base64,${base64}`;
             console.log('⚠️ Imgur falhou, enviando base64');
         }
 
-        const res = await axios.post(MAKE_WEBHOOK, { caption: legenda, imageUrl });
-        console.log('📤 Anúncio enviado para o Make! Status: ' + res.status);
+        const res = await axios.post(MAKE_WEBHOOK, { caption: legenda, imageUrl }, { timeout: 20000 });
+        stats.instagramPostado++;
+        stats.ultimoInstagram = new Date().toLocaleString('pt-BR') + ' — ' + legenda.slice(0, 40);
+        registrarSucesso('Instagram', `Postado! Status HTTP ${res.status}`);
+
+        // remove da fila se estava em retry
+        stats.filaRetry = stats.filaRetry.filter(f => f.legenda !== legenda);
+
     } catch (err) {
-        console.error('Erro ao enviar para Make:', err.message);
+        stats.instagramFalha++;
+        registrarErro('Make', `Tentativa ${tentativa}: ${err.message}`);
+
+        if (tentativa < 3) {
+            const espera = tentativa * 30000; // 30s, 60s
+            console.log(`🔁 Retentando em ${espera / 1000}s... (tentativa ${tentativa + 1}/3)`);
+
+            // adiciona à fila visual
+            const jaExiste = stats.filaRetry.find(f => f.legenda === legenda);
+            if (!jaExiste) stats.filaRetry.push({ tipo: 'Instagram', legenda, tentativas: tentativa });
+            else jaExiste.tentativas = tentativa;
+
+            setTimeout(() => enviarParaMake(buffer, legenda, tentativa + 1), espera);
+        } else {
+            registrarErro('Make', `FALHOU após 3 tentativas: ${legenda.slice(0, 40)}`);
+            stats.filaRetry = stats.filaRetry.filter(f => f.legenda !== legenda);
+        }
     }
 }
 
 
 let ultimoQR = null;
 
-// servidor web simples para exibir o QR Code via navegador
+// servidor web — painel de monitoramento + QR Code
 http.createServer(async (req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     if (ultimoQR) {
-        const qrImg = await QRCode.toDataURL(ultimoQR);
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(`<html><body style="text-align:center;padding:40px"><h2>Escaneie o QR Code com seu WhatsApp</h2><img src="${qrImg}"/><p>Atualize a página se o QR expirar</p></body></html>`);
+        const qrDataUrl = await QRCode.toDataURL(ultimoQR);
+        res.end(gerarHtmlStatus(qrDataUrl));
     } else {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end('<html><body><h2>Bot ja conectado ou aguardando QR...</h2></body></html>');
+        res.end(gerarHtmlStatus(null));
     }
 }).listen(process.env.PORT || 3000, () => {
-    console.log('Servidor QR rodando na porta ' + (process.env.PORT || 3000));
+    console.log('🌐 Painel de monitoramento rodando na porta ' + (process.env.PORT || 3000));
 });
 
 // =============================================
@@ -136,9 +255,9 @@ function agendarAvisoMatinal(sock, grupoAvisoId) {
     setTimeout(async () => {
         try {
             await sock.sendMessage(grupoAvisoId, { text: TEXTO_AVISO });
-            console.log('📢 Aviso matinal enviado!');
+            registrarSucesso('Aviso Matinal', 'Enviado com sucesso!');
         } catch (err) {
-            console.error('Erro ao enviar aviso matinal:', err.message);
+            registrarErro('Aviso Matinal', err.message);
         }
         agendarAvisoMatinal(sock, grupoAvisoId);
     }, ms);
@@ -158,16 +277,24 @@ async function iniciarBot() {
     sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
         if (qr) {
             ultimoQR = qr;
-            console.log('\n📱 Acesse a URL do servico no Render para escanear o QR Code!\n');
+            stats.status = 'aguardando_qr';
+            console.log('\n📱 Acesse a URL do serviço no Render para escanear o QR Code!\n');
             qrcode.generate(qr, { small: true });
         }
         if (connection === 'open') {
+            ultimoQR = null;
+            stats.status = 'conectado';
             console.log('\n✅ Bot conectado!\n');
         }
         if (connection === 'close') {
+            stats.status = 'desconectado';
             const reiniciar = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Conexão encerrada. Reiniciando:', reiniciar);
-            if (reiniciar) iniciarBot();
+            if (reiniciar) {
+                stats.reconexoes++;
+                registrarErro('Conexão', `Desconectado. Reconectando (tentativa ${stats.reconexoes})...`);
+                setTimeout(iniciarBot, 3000);
+            }
         }
     });
 
@@ -176,18 +303,23 @@ async function iniciarBot() {
     let grupoAvisoId   = null;
 
     async function buscarGrupos() {
-        const grupos = await sock.groupFetchAllParticipating();
-        for (const [id, info] of Object.entries(grupos)) {
-            const nome = info.subject.toLowerCase();
-            if (nome.includes(GRUPO_ORIGEM_NOME.toLowerCase()))       { grupoOrigemId  = id; console.log('✅ Grupo origem:  ' + info.subject); }
-            if (nome === GRUPO_DESTINO_NOME.toLowerCase())               { grupoDestinoId = id; console.log('✅ Grupo destino: ' + info.subject); }
-            if (nome === GRUPO_AVISO_NOME.toLowerCase())               { grupoAvisoId   = id; console.log('✅ Grupo aviso:   ' + info.subject); }
-        }
-        if (!grupoOrigemId)  console.warn('⚠️  Grupo de ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);
-        if (!grupoDestinoId) console.warn('⚠️  Grupo de DESTINO não encontrado: ' + GRUPO_DESTINO_NOME);
-        if (!grupoAvisoId)   console.warn('⚠️  Grupo de AVISO não encontrado: '   + GRUPO_AVISO_NOME);
+        try {
+            const grupos = await sock.groupFetchAllParticipating();
+            for (const [id, info] of Object.entries(grupos)) {
+                const nome = info.subject.toLowerCase();
+                if (nome.includes(GRUPO_ORIGEM_NOME.toLowerCase()))  { grupoOrigemId  = id; registrarSucesso('Grupos', 'Origem:  ' + info.subject); }
+                if (nome === GRUPO_DESTINO_NOME.toLowerCase())        { grupoDestinoId = id; registrarSucesso('Grupos', 'Destino: ' + info.subject); }
+                if (nome === GRUPO_AVISO_NOME.toLowerCase())          { grupoAvisoId   = id; registrarSucesso('Grupos', 'Aviso:   ' + info.subject); }
+            }
+            if (!grupoOrigemId)  registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);
+            if (!grupoDestinoId) registrarErro('Grupos', 'DESTINO não encontrado: ' + GRUPO_DESTINO_NOME);
+            if (!grupoAvisoId)   registrarErro('Grupos', 'AVISO não encontrado: '   + GRUPO_AVISO_NOME);
 
-        if (grupoAvisoId) agendarAvisoMatinal(sock, grupoAvisoId);
+            if (grupoAvisoId) agendarAvisoMatinal(sock, grupoAvisoId);
+        } catch (err) {
+            registrarErro('buscarGrupos', err.message);
+            setTimeout(buscarGrupos, 10000); // tenta novamente em 10s se falhar
+        }
     }
 
     sock.ev.on('connection.update', async ({ connection }) => {
@@ -204,11 +336,15 @@ async function iniciarBot() {
                 if (msg.key.fromMe) continue;
                 if (msg.key.remoteJid !== grupoOrigemId) continue;
 
+                stats.mensagensRecebidas++;
+
                 const texto = msg.message?.conversation
                     || msg.message?.extendedTextMessage?.text
                     || msg.message?.imageMessage?.caption
                     || msg.message?.videoMessage?.caption
                     || '';
+
+                stats.ultimaMensagem = new Date().toLocaleTimeString('pt-BR') + ' — ' + texto.slice(0, 50);
 
                 const textoLower = texto.toLowerCase();
                 const isVendido   = textoLower.includes('vendido');
@@ -217,11 +353,7 @@ async function iniciarBot() {
                 // mensagem de status (vendido/reservado) — reencaminha com destaque
                 if (isVendido || isReservado) {
                     const status = isVendido ? '🚫 *VENDIDO*' : '⏳ *RESERVADO*';
-
-                    // verifica se tem mídia na própria mensagem
                     const temMidia = msg.message?.imageMessage || msg.message?.videoMessage;
-
-                    // verifica se é uma resposta a uma mensagem com foto (mensagem citada)
                     const msgCitada = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
                     const temMidiaCitada = msgCitada?.imageMessage || msgCitada?.videoMessage;
 
@@ -230,29 +362,20 @@ async function iniciarBot() {
                         const tipoMidia = msg.message.imageMessage ? 'image' : 'video';
                         const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
                         const caption   = msg.message[tipoMidia + 'Message']?.caption || '';
-                        await sock.sendMessage(grupoDestinoId, {
-                            [tipoMidia]: buffer,
-                            mimetype,
-                            caption: `${status}\n${caption}`,
-                        });
+                        await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: `${status}\n${caption}` });
                     } else if (temMidiaCitada) {
-                        // reencaminha a foto da mensagem original com o status
                         const tipoMidia = msgCitada.imageMessage ? 'image' : 'video';
                         const mimetype  = msgCitada[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
                         const caption   = msgCitada[tipoMidia + 'Message']?.caption || '';
                         const buffer    = await downloadMediaMessage(
-                            { message: msgCitada, key: msg.key },
-                            'buffer', {},
+                            { message: msgCitada, key: msg.key }, 'buffer', {},
                             { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
                         );
-                        await sock.sendMessage(grupoDestinoId, {
-                            [tipoMidia]: buffer,
-                            mimetype,
-                            caption: `${status}\n${caption}`,
-                        });
+                        await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: `${status}\n${caption}` });
                     } else {
                         await sock.sendMessage(grupoDestinoId, { text: `${status}\n${texto}` });
                     }
+                    stats.mensagensReencaminhadas++;
                     console.log(`📢 Status reencaminhado: ${status}`);
                     continue;
                 }
@@ -265,25 +388,23 @@ async function iniciarBot() {
                     const tipoMidia = msg.message.imageMessage ? 'image' : msg.message.videoMessage ? 'video' : 'document';
                     const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
 
-                    await sock.sendMessage(grupoDestinoId, {
-                        [tipoMidia]: buffer,
-                        mimetype,
-                        caption: textoAjustado,
-                    });
+                    await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: textoAjustado });
+                    stats.mensagensReencaminhadas++;
 
-                    // enviar para Make para postar no Instagram
+                    // postar no Instagram (somente imagens)
                     if (tipoMidia === 'image') {
                         const legendaIG = textoAjustado + '\n\n#repasse #repasseminasbrasil #carros #bh #veiculos #seminovo';
                         const bufferIG = await prepararImagemInstagram(buffer);
-                        await enviarParaMake(bufferIG, legendaIG);
+                        enviarParaMake(bufferIG, legendaIG); // assíncrono, não bloqueia
                     }
                 } else if (textoAjustado.trim()) {
                     await sock.sendMessage(grupoDestinoId, { text: textoAjustado });
+                    stats.mensagensReencaminhadas++;
                 }
 
                 console.log(`📨 Reencaminhado: "${texto.slice(0, 60)}"`);
             } catch (err) {
-                console.error('Erro:', err.message);
+                registrarErro('Mensagem', err.message);
             }
         }
     });
