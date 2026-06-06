@@ -22,6 +22,10 @@ const stats = {
     ultimoInstagram: null,
     reconexoes: 0,
     status: 'iniciando',
+    // contadores diários — resetam à meia-noite
+    diaPostado: 0,
+    diaFalha: 0,
+    diaReencaminhadas: 0,
     filaRetry: [],
 };
 
@@ -49,6 +53,29 @@ setInterval(() => {
         if (agora - data.criadoEm > 30 * 60 * 1000) imagensCache.delete(token);
     }
 }, 5 * 60 * 1000);
+
+// Log diário de postagens + reset dos contadores à meia-noite
+function agendarLogDiario() {
+    const agora = new Date();
+    const amanha = new Date(agora);
+    amanha.setHours(0, 0, 0, 0);
+    amanha.setDate(amanha.getDate() + 1);
+    const msAteAmanha = amanha - agora;
+
+    setTimeout(() => {
+        console.log(
+            `📊 [RESUMO DO DIA ${new Date().toLocaleDateString('pt-BR')}] ` +
+            `Reencaminhadas: ${stats.diaReencaminhadas} | ` +
+            `Instagram OK: ${stats.diaPostado} | ` +
+            `Falhas: ${stats.diaFalha}`
+        );
+        stats.diaPostado = 0;
+        stats.diaFalha = 0;
+        stats.diaReencaminhadas = 0;
+        agendarLogDiario(); // reagenda para a próxima meia-noite
+    }, msAteAmanha);
+}
+agendarLogDiario();
 
 // Limpa instagramPosts com mais de 7 dias (veículos já vendidos não precisam ficar em memória)
 setInterval(() => {
@@ -103,6 +130,29 @@ function salvarInstagramPosts() {
 }
 
 const instagramPosts = carregarInstagramPosts(); // stanzaId → { postId, caption, hora }
+
+// Persiste e restaura filaRetry para dar visibilidade de retries perdidos em restart
+const FILA_RETRY_FILE = path.join(__dirname, 'fila_retry.json');
+
+function salvarFilaRetry() {
+    try {
+        fs.writeFileSync(FILA_RETRY_FILE, JSON.stringify(stats.filaRetry, null, 2));
+    } catch (err) {
+        console.error('Erro ao salvar fila_retry.json:', err.message);
+    }
+}
+
+(function alertarRetrysPerdidos() {
+    if (!fs.existsSync(FILA_RETRY_FILE)) return;
+    try {
+        const pendentes = JSON.parse(fs.readFileSync(FILA_RETRY_FILE, 'utf8'));
+        if (pendentes.length > 0) {
+            console.warn(`⚠️  ${pendentes.length} retry(s) pendente(s) foram perdidos no restart anterior:`);
+            pendentes.forEach(f => console.warn(`   → ${f.tipo} | stanzaId: ${f.stanzaId} | tentativa: ${f.tentativas}`));
+        }
+        fs.writeFileSync(FILA_RETRY_FILE, JSON.stringify([]));
+    } catch {}
+})();
 
 // Restaura o último post postado para que /vendido-teste funcione após restart
 function restaurarUltimoPost() {
@@ -212,6 +262,7 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
         const res = await axios.post(MAKE_WEBHOOK, payload, { timeout: 60000 });
 
         stats.instagramPostado++;
+        stats.diaPostado++;
         stats.ultimoInstagram = new Date().toLocaleString('pt-BR') + ' — ' + legenda.slice(0, 40);
         registrarSucesso('Instagram', `Postado! Status ${res.status}`);
 
@@ -233,9 +284,11 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
         }
 
         stats.filaRetry = stats.filaRetry.filter(f => f.stanzaId !== stanzaId);
+        salvarFilaRetry();
 
     } catch (err) {
         stats.instagramFalha++;
+        stats.diaFalha++;
         registrarErro('Make/Post', `Tentativa ${tentativa}: ${err.message}`);
 
         if (tentativa < 3) {
@@ -247,10 +300,12 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
             const jaExiste = stats.filaRetry.find(f => f.stanzaId === stanzaId);
             if (!jaExiste) stats.filaRetry.push({ tipo: 'Post Instagram', stanzaId, tentativas: tentativa });
             else jaExiste.tentativas = tentativa;
+            salvarFilaRetry();
             setTimeout(() => enviarMidiaParaMake(buffer, legenda, stanzaId, tipo, tentativa + 1), espera);
         } else {
             registrarErro('Make/Post', `FALHOU 3x: ${legenda.slice(0, 40)}`);
             stats.filaRetry = stats.filaRetry.filter(f => f.stanzaId !== stanzaId);
+            salvarFilaRetry();
         }
     }
 }
@@ -649,6 +704,7 @@ async function iniciarBot() {
                     }
 
                     stats.mensagensReencaminhadas++;
+                    stats.diaReencaminhadas++;
                     console.log(`📢 Status reencaminhado: ${status}`);
                     continue;
                 }
@@ -664,6 +720,7 @@ async function iniciarBot() {
 
                     await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: textoAjustado });
                     stats.mensagensReencaminhadas++;
+                    stats.diaReencaminhadas++;
 
                     // Posta no Instagram SOMENTE se NÃO for redução de preço
                     if (tipoMidia === 'image' || tipoMidia === 'video') {
@@ -683,6 +740,7 @@ async function iniciarBot() {
                 } else if (textoAjustado.trim()) {
                     await sock.sendMessage(grupoDestinoId, { text: textoAjustado });
                     stats.mensagensReencaminhadas++;
+                    stats.diaReencaminhadas++;
                 }
 
                 console.log(`📨 Reencaminhado: "${texto.slice(0, 60)}"`);
