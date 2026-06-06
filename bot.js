@@ -1,9 +1,12 @@
+require('dotenv').config();
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const http = require('http');
 const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
 
 // =============================================
 //  SISTEMA DE MONITORAMENTO E AUTO-REPARO
@@ -47,6 +50,22 @@ setInterval(() => {
     }
 }, 5 * 60 * 1000);
 
+// Limpa instagramPosts com mais de 7 dias (veículos já vendidos não precisam ficar em memória)
+setInterval(() => {
+    const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let removidos = 0;
+    for (const [id, dado] of instagramPosts.entries()) {
+        if (new Date(dado.hora).getTime() < limite) {
+            instagramPosts.delete(id);
+            removidos++;
+        }
+    }
+    if (removidos > 0) {
+        console.log(`🧹 instagramPosts: ${removidos} entradas antigas removidas`);
+        salvarInstagramPosts();
+    }
+}, 24 * 60 * 60 * 1000);
+
 function gerarUrlImagem(buffer) {
     const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
     imagensCache.set(token, { buffer, criadoEm: Date.now() });
@@ -59,25 +78,117 @@ function gerarUrlImagem(buffer) {
 //  MAPA DE POSTS DO INSTAGRAM (para marcar VENDIDO)
 // =============================================
 // Armazena: stanzaId da mensagem WhatsApp → instagramPostId
-const instagramPosts = new Map(); // stanzaId → { postId, caption, hora }
+const INSTAGRAM_POSTS_FILE = path.join(__dirname, 'instagram_posts.json');
+
+function carregarInstagramPosts() {
+    try {
+        if (fs.existsSync(INSTAGRAM_POSTS_FILE)) {
+            const dados = JSON.parse(fs.readFileSync(INSTAGRAM_POSTS_FILE, 'utf8'));
+            const mapa = new Map(Object.entries(dados));
+            console.log(`📂 instagram_posts.json carregado: ${mapa.size} entradas`);
+            return mapa;
+        }
+    } catch (err) {
+        console.error('Erro ao carregar instagram_posts.json:', err.message);
+    }
+    return new Map();
+}
+
+function salvarInstagramPosts() {
+    try {
+        fs.writeFileSync(INSTAGRAM_POSTS_FILE, JSON.stringify(Object.fromEntries(instagramPosts), null, 2));
+    } catch (err) {
+        console.error('Erro ao salvar instagram_posts.json:', err.message);
+    }
+}
+
+const instagramPosts = carregarInstagramPosts(); // stanzaId → { postId, caption, hora }
+
+// Restaura o último post postado para que /vendido-teste funcione após restart
+function restaurarUltimoPost() {
+    if (instagramPosts.size === 0) return null;
+    let ultimoDado = null;
+    let ultimaHora = 0;
+    for (const dado of instagramPosts.values()) {
+        const hora = new Date(dado.hora || 0).getTime();
+        if (hora > ultimaHora && dado.postId) {
+            ultimaHora = hora;
+            ultimoDado = dado;
+        }
+    }
+    if (ultimoDado) {
+        console.log(`🔖 Último post restaurado do disco: ${ultimoDado.postId} — "${(ultimoDado.caption || '').slice(0, 50)}"`);
+        return { postId: ultimoDado.postId, caption: ultimoDado.caption || '' };
+    }
+    return null;
+}
 
 // =============================================
 //  MAKE WEBHOOK (Instagram)
 // =============================================
-const MAKE_WEBHOOK         = 'https://hook.us2.make.com/r6cbsk7od1ediwz5glih8657khcpzmd0';
-const MAKE_WEBHOOK_VENDIDO = 'https://hook.us2.make.com/r6cbsk7od1ediwz5glih8657khcpzmd0'; // mesmo webhook, roteado por action
+const MAKE_WEBHOOK         = process.env.MAKE_WEBHOOK;
+const MAKE_WEBHOOK_VENDIDO = process.env.MAKE_WEBHOOK_VENDIDO || MAKE_WEBHOOK;
 
-// redimensiona imagem para 1:1 sem cortar (fundo preto)
+// Redimensiona para 1080x1080 com fundo desfocado da própria imagem + watermark da marca
 async function prepararImagemInstagram(buffer) {
     try {
-        return await sharp(buffer)
-            .resize(1080, 1080, { fit: 'contain', background: { r: 0, g: 0, b: 0 } })
-            .jpeg({ quality: 100 })
+        // Fundo: imagem esticada + desfoque + escurecimento leve
+        const fundo = await sharp(buffer)
+            .resize(1080, 1080, { fit: 'cover', position: 'center' })
+            .blur(28)
+            .modulate({ brightness: 0.55 })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+
+        // Imagem principal centralizada com transparência nas bordas
+        const frente = await sharp(buffer)
+            .resize(1080, 1080, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+            .png()
+            .toBuffer();
+
+        // Gradiente escuro + nome da marca na parte inferior
+        const watermark = Buffer.from(`
+            <svg width="1080" height="1080" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="black" stop-opacity="0"/>
+                        <stop offset="100%" stop-color="black" stop-opacity="0.72"/>
+                    </linearGradient>
+                </defs>
+                <rect x="0" y="860" width="1080" height="220" fill="url(#g)"/>
+                <text x="540" y="1040" font-family="Arial Black, Arial, sans-serif"
+                      font-size="40" font-weight="900" fill="white"
+                      text-anchor="middle" letter-spacing="3">MINAS BRASIL REPASSE</text>
+            </svg>`);
+
+        return await sharp(fundo)
+            .composite([
+                { input: frente, blend: 'over' },
+                { input: watermark, blend: 'over' },
+            ])
+            .jpeg({ quality: 95 })
             .toBuffer();
     } catch (err) {
         registrarErro('Sharp', err.message);
         return buffer;
     }
+}
+
+// Formata a legenda do Instagram: cabeçalho + corpo + CTA + hashtags separadas
+function formatarLegendaInstagram(texto) {
+    const corpo = texto.trim();
+    return `🚗 MINAS BRASIL REPASSE
+
+${corpo}
+
+━━━━━━━━━━━━━━━━━━
+💬 Consulte disponibilidade!
+━━━━━━━━━━━━━━━━━━
+
+.
+.
+.
+#repasse #repasseminasbrasil #carrosbh #veiculosbh #seminovos #automoveis #carrosusados #minasbrasil #repassebh #comprarcarro #vendercarro #carrosminasgerais #bh`;
 }
 
 // Palavras que indicam REDUÇÃO DE PREÇO — NÃO postar no Instagram
@@ -88,28 +199,37 @@ function isAnuncioAbaixouPreco(texto) {
     return PALAVRAS_ABAIXOU.some(p => lower.includes(p));
 }
 
-// Envia nova foto para Make (posta no Instagram) e guarda o postId retornado
-async function enviarNovaFotoParaMake(buffer, legenda, stanzaId, tentativa = 1) {
+// Envia foto ou vídeo para Make (posta no Instagram) e guarda o postId retornado
+// tipo: 'image' | 'video'
+async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', tentativa = 1) {
     try {
         const axios = require('axios');
         const { url } = gerarUrlImagem(buffer);
+        const payload = tipo === 'video'
+            ? { action: 'post_video', caption: legenda, videoUrl: url, stanzaId }
+            : { action: 'post',       caption: legenda, imageUrl: url, stanzaId };
 
-        const res = await axios.post(MAKE_WEBHOOK, {
-            action: 'post',
-            caption: legenda,
-            imageUrl: url,
-        }, { timeout: 30000 });
+        const res = await axios.post(MAKE_WEBHOOK, payload, { timeout: 60000 });
 
         stats.instagramPostado++;
         stats.ultimoInstagram = new Date().toLocaleString('pt-BR') + ' — ' + legenda.slice(0, 40);
         registrarSucesso('Instagram', `Postado! Status ${res.status}`);
 
-        // Guarda postId se Make retornar (necessário para VENDIDO)
+        // Guarda stanzaId + legenda agora; o postId chega via /webhook-instagram-id depois
+        if (stanzaId) {
+            instagramPosts.set(stanzaId, { postId: null, caption: legenda, hora: new Date().toISOString() });
+            salvarInstagramPosts();
+            console.log(`🔖 Aguardando postId do Make.com para msg ${stanzaId}`);
+        }
+        // Compatibilidade: se Make retornar o postId direto na resposta, usa também
         const postId = res.data?.postId || res.data?.id || null;
         if (postId && stanzaId) {
-            instagramPosts.set(stanzaId, { postId, caption: legenda, hora: new Date().toISOString() });
+            const dado = instagramPosts.get(stanzaId) || { caption: legenda, hora: new Date().toISOString() };
+            dado.postId = postId;
+            instagramPosts.set(stanzaId, dado);
+            salvarInstagramPosts();
             ultimoPostInstagram = { postId, caption: legenda };
-            console.log(`🔖 Instagram postId armazenado: ${postId} (msg: ${stanzaId})`);
+            console.log(`🔖 Instagram postId armazenado direto: ${postId} (msg: ${stanzaId})`);
         }
 
         stats.filaRetry = stats.filaRetry.filter(f => f.stanzaId !== stanzaId);
@@ -119,12 +239,15 @@ async function enviarNovaFotoParaMake(buffer, legenda, stanzaId, tentativa = 1) 
         registrarErro('Make/Post', `Tentativa ${tentativa}: ${err.message}`);
 
         if (tentativa < 3) {
-            const espera = tentativa * 30000;
-            console.log(`🔁 Retentando em ${espera / 1000}s... (tentativa ${tentativa + 1}/3)`);
+            // 429 = rate limit do Instagram: espera mais longa (90s/180s) para respeitar o cooldown
+            const status = err.response?.status;
+            const espera = status === 429 ? tentativa * 90000 : tentativa * 30000;
+            const motivo = status === 429 ? '⏳ Rate limit (429)' : '🔁 Erro transitório';
+            console.log(`${motivo} — retentando em ${espera / 1000}s... (tentativa ${tentativa + 1}/3)`);
             const jaExiste = stats.filaRetry.find(f => f.stanzaId === stanzaId);
             if (!jaExiste) stats.filaRetry.push({ tipo: 'Post Instagram', stanzaId, tentativas: tentativa });
             else jaExiste.tentativas = tentativa;
-            setTimeout(() => enviarNovaFotoParaMake(buffer, legenda, stanzaId, tentativa + 1), espera);
+            setTimeout(() => enviarMidiaParaMake(buffer, legenda, stanzaId, tipo, tentativa + 1), espera);
         } else {
             registrarErro('Make/Post', `FALHOU 3x: ${legenda.slice(0, 40)}`);
             stats.filaRetry = stats.filaRetry.filter(f => f.stanzaId !== stanzaId);
@@ -150,15 +273,16 @@ async function marcarVendidoNoInstagram(stanzaIdCitado) {
         }, { timeout: 15000 });
 
         registrarSucesso('Instagram/Vendido', `Post ${dado.postId} marcado como VENDIDO!`);
-        instagramPosts.delete(stanzaIdCitado); // remove do mapa após marcar
+        instagramPosts.delete(stanzaIdCitado);
+        salvarInstagramPosts();
 
     } catch (err) {
         registrarErro('Make/Vendido', err.message);
     }
 }
 
-// Último post do Instagram (para teste manual)
-let ultimoPostInstagram = null; // { postId, caption }
+// Último post do Instagram (para /vendido-teste) — restaurado do disco se disponível
+let ultimoPostInstagram = restaurarUltimoPost();
 
 // Painel HTML de monitoramento
 function gerarHtmlStatus(qrDataUrl) {
@@ -270,6 +394,35 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Rota de callback do Make.com com o postId do Instagram
+    // Make.com envia: POST /webhook-instagram-id  { stanzaId, postId }
+    if (req.method === 'POST' && req.url === '/webhook-instagram-id') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            try {
+                const { stanzaId, postId } = JSON.parse(body);
+                if (stanzaId && postId) {
+                    const dado = instagramPosts.get(stanzaId) || {};
+                    dado.postId = postId;
+                    instagramPosts.set(stanzaId, dado);
+                    ultimoPostInstagram = { postId, caption: dado.caption || '' };
+                    salvarInstagramPosts();
+                    registrarSucesso('Instagram/Callback', `postId ${postId} vinculado à msg ${stanzaId}`);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true }));
+                } else {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ erro: 'stanzaId e postId são obrigatórios' }));
+                }
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ erro: err.message }));
+            }
+        });
+        return;
+    }
+
     // Rota de imagens: /img/:token
     if (req.url && req.url.startsWith('/img/')) {
         const token = req.url.slice(5);
@@ -342,7 +495,15 @@ function ajustarPrecos(texto) {
     });
 }
 
+// Handle global — cancelado e recriado a cada reconexão para evitar timers duplicados
+let timerAvisoMatinal = null;
+
 function agendarAvisoMatinal(sock, grupoAvisoId) {
+    if (timerAvisoMatinal) {
+        clearTimeout(timerAvisoMatinal);
+        timerAvisoMatinal = null;
+    }
+
     const agora   = new Date();
     const disparo = new Date();
     disparo.setHours(HORA_AVISO, MINUTO_AVISO, 0, 0);
@@ -353,7 +514,8 @@ function agendarAvisoMatinal(sock, grupoAvisoId) {
     const minutos = Math.floor((ms % 3600000) / 60000);
     console.log(`⏰ Aviso matinal agendado para ${disparo.toLocaleTimeString('pt-BR')} (em ${horas}h ${minutos}min)`);
 
-    setTimeout(async () => {
+    timerAvisoMatinal = setTimeout(async () => {
+        timerAvisoMatinal = null;
         try {
             await sock.sendMessage(grupoAvisoId, { text: TEXTO_AVISO });
             registrarSucesso('Aviso Matinal', 'Enviado com sucesso!');
@@ -467,8 +629,13 @@ async function iniciarBot() {
                         const tipoMidia = msgCitada.imageMessage ? 'image' : 'video';
                         const mimetype  = msgCitada[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
                         const caption   = msgCitada[tipoMidia + 'Message']?.caption || '';
+                        const chaveMsg  = {
+                            id: stanzaIdCitado,
+                            remoteJid: msg.key.remoteJid,
+                            fromMe: false,
+                        };
                         const buffer    = await downloadMediaMessage(
-                            { message: msgCitada, key: msg.key }, 'buffer', {},
+                            { message: msgCitada, key: chaveMsg }, 'buffer', {},
                             { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
                         );
                         await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: `${status}\n${caption}` });
@@ -499,14 +666,18 @@ async function iniciarBot() {
                     stats.mensagensReencaminhadas++;
 
                     // Posta no Instagram SOMENTE se NÃO for redução de preço
-                    if (tipoMidia === 'image') {
+                    if (tipoMidia === 'image' || tipoMidia === 'video') {
                         if (isAnuncioAbaixouPreco(textoAjustado)) {
                             console.log('💲 Redução de preço detectada — NÃO postando no Instagram');
                         } else {
                             const stanzaId = msg.key.id;
-                            const legendaIG = textoAjustado + '\n\n#repasse #repasseminasbrasil #carros #bh #veiculos #seminovo';
-                            const bufferIG = await prepararImagemInstagram(buffer);
-                            enviarNovaFotoParaMake(bufferIG, legendaIG, stanzaId); // assíncrono
+                            const legendaIG = formatarLegendaInstagram(textoAjustado);
+                            if (tipoMidia === 'image') {
+                                const bufferIG = await prepararImagemInstagram(buffer);
+                                enviarMidiaParaMake(bufferIG, legendaIG, stanzaId, 'image');
+                            } else {
+                                enviarMidiaParaMake(buffer, legendaIG, stanzaId, 'video');
+                            }
                         }
                     }
                 } else if (textoAjustado.trim()) {
