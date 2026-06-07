@@ -511,7 +511,7 @@ const GRUPO_ORIGEM_NOME   = 'Ronei repasse';
 const GRUPO_DESTINO_NOME  = 'MINAS BRASIL REPASSE GRUPO 8';
 const GRUPO_AVISO_NOME    = 'MINAS BRASIL REPASSE GRUPO 8';
 const ACRESCIMO           = 1000;
-const HORA_AVISO          = 6;
+const HORA_AVISO          = 9;
 const MINUTO_AVISO        = 30;
 // =============================================
 
