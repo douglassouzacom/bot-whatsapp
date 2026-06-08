@@ -511,7 +511,7 @@ const GRUPO_ORIGEM_NOME   = 'Ronei repasse';
 const GRUPO_DESTINO_NOME  = 'MINAS BRASIL REPASSE GRUPO 8';
 const GRUPO_AVISO_NOME    = 'MINAS BRASIL REPASSE GRUPO 8';
 const ACRESCIMO           = 1000;
-const HORA_AVISO          = 12; // 12 UTC = 09:30 BRT
+const HORA_AVISO          = 9;  // 9 UTC = 06:30 BRT
 const MINUTO_AVISO        = 30;
 // =============================================
 
