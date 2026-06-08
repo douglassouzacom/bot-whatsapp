@@ -626,8 +626,8 @@ async function iniciarBot() {
             for (const [id, info] of Object.entries(grupos)) {
                 const nome = info.subject.toLowerCase();
                 if (nome.includes(GRUPO_ORIGEM_NOME.toLowerCase()))  { grupoOrigemId  = id; registrarSucesso('Grupos', 'Origem:  ' + info.subject); }
-                if (nome === GRUPO_DESTINO_NOME.toLowerCase())        { grupoDestinoId = id; registrarSucesso('Grupos', 'Destino: ' + info.subject); }
-                if (nome === GRUPO_AVISO_NOME.toLowerCase())          { grupoAvisoId   = id; registrarSucesso('Grupos', 'Aviso:   ' + info.subject); }
+                if (nome.includes(GRUPO_DESTINO_NOME.toLowerCase())) { grupoDestinoId = id; registrarSucesso('Grupos', 'Destino: ' + info.subject); }
+                if (nome.includes(GRUPO_AVISO_NOME.toLowerCase()))   { grupoAvisoId   = id; registrarSucesso('Grupos', 'Aviso:   ' + info.subject); }
             }
             if (!grupoOrigemId)  registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);
             if (!grupoDestinoId) registrarErro('Grupos', 'DESTINO não encontrado: ' + GRUPO_DESTINO_NOME);
