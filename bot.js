@@ -99,11 +99,26 @@ setInterval(() => {
     }
 }, 24 * 60 * 60 * 1000);
 
+// URL base para servir imagens ao Make.com — precisa ser acessível externamente.
+// Render.com define RENDER_EXTERNAL_URL automaticamente.
+// Outros hosts: defina EXTERNAL_BASE_URL nas variáveis de ambiente.
+const _BASE_URL_EXTERNA = (
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.EXTERNAL_BASE_URL ||
+    null
+);
+if (!_BASE_URL_EXTERNA) {
+    console.warn(
+        '⚠️  RENDER_EXTERNAL_URL e EXTERNAL_BASE_URL não definidos — ' +
+        'URLs de imagem usarão localhost e Make.com NÃO conseguirá baixar as imagens. ' +
+        'Configure EXTERNAL_BASE_URL com a URL pública deste serviço.'
+    );
+}
+
 function gerarUrlImagem(buffer) {
     const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
     imagensCache.set(token, { buffer, criadoEm: Date.now() });
-    // RENDER_EXTERNAL_URL é definido automaticamente no Render.com
-    const baseUrl = (process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+    const baseUrl = (_BASE_URL_EXTERNA || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
     return { token, url: `${baseUrl}/img/${token}` };
 }
 
@@ -733,34 +748,11 @@ async function iniciarBot() {
                 // ── VENDIDO / RESERVADO ──────────────────────────────────────
                 if (isVendido || isReservado) {
                     const status = isVendido ? '🚫 *VENDIDO*' : '⏳ *RESERVADO*';
-                    const temMidia = msg.message?.imageMessage || msg.message?.videoMessage;
-                    const msgCitada = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-                    const temMidiaCitada = msgCitada?.imageMessage || msgCitada?.videoMessage;
                     const stanzaIdCitado = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
+                    const descricao = texto.replace(/vendido|reservado/gi, '').trim();
+                    const avisoTexto = descricao ? `${status}\n${descricao}` : status;
 
-                    if (temMidia) {
-                        const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
-                        const tipoMidia = msg.message.imageMessage ? 'image' : 'video';
-                        const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
-                        const caption   = msg.message[tipoMidia + 'Message']?.caption || '';
-                        await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: `${status}\n${caption}` });
-                    } else if (temMidiaCitada) {
-                        const tipoMidia = msgCitada.imageMessage ? 'image' : 'video';
-                        const mimetype  = msgCitada[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
-                        const caption   = msgCitada[tipoMidia + 'Message']?.caption || '';
-                        const chaveMsg  = {
-                            id: stanzaIdCitado,
-                            remoteJid: msg.key.remoteJid,
-                            fromMe: false,
-                        };
-                        const buffer    = await downloadMediaMessage(
-                            { message: msgCitada, key: chaveMsg }, 'buffer', {},
-                            { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
-                        );
-                        await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: `${status}\n${caption}` });
-                    } else {
-                        await sock.sendMessage(grupoDestinoId, { text: `${status}\n${texto}` });
-                    }
+                    await sock.sendMessage(grupoDestinoId, { text: avisoTexto });
 
                     // Marca VENDIDO no Instagram se tiver o postId mapeado
                     if (isVendido && stanzaIdCitado) {
