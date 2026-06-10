@@ -449,6 +449,7 @@ http.createServer(async (req, res) => {
                 fs.readdirSync(sessaoDir).forEach(f => fs.unlinkSync(path.join(sessaoDir, f)));
             }
             ultimoQR = null;
+            botRodando = false;
             stats.status = 'reiniciando';
             registrarSucesso('Reset', 'Sessão apagada — gerando novo QR...');
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -633,7 +634,11 @@ function agendarAvisoMatinal(sock, grupoAvisoId) {
     }, ms);
 }
 
+let botRodando = false;
+
 async function iniciarBot() {
+    if (botRodando) return;
+    botRodando = true;
     const { state, saveCreds } = await useMultiFileAuthState('sessao');
 
     const sock = makeWASocket({
@@ -658,12 +663,13 @@ async function iniciarBot() {
         }
         if (connection === 'close') {
             stats.status = 'desconectado';
+            botRodando = false;
             const reiniciar = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Conexão encerrada. Reiniciando:', reiniciar);
             if (reiniciar) {
                 stats.reconexoes++;
                 registrarErro('Conexão', `Desconectado. Reconectando (tentativa ${stats.reconexoes})...`);
-                setTimeout(iniciarBot, 3000);
+                setTimeout(iniciarBot, 8000);
             }
         }
     });
