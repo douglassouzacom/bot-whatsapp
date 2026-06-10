@@ -416,6 +416,58 @@ let ultimoQR = null;
 
 // Servidor web — painel + QR Code + serviço de imagens
 http.createServer(async (req, res) => {
+    // Rota QR dedicada: /qr
+    if (req.url === '/qr') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        if (ultimoQR) {
+            const qrDataUrl = await QRCode.toDataURL(ultimoQR);
+            res.end(`<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="10">
+            <style>body{font-family:Arial,sans-serif;text-align:center;padding:40px;background:#1a1a2e;color:#eee}
+            h2{color:#00d4ff}img{border:4px solid #00d4ff;border-radius:8px;padding:10px;background:#fff}</style></head>
+            <body><h2>📱 Escaneie o QR Code com seu WhatsApp</h2>
+            <img src="${qrDataUrl}"/><p>Página atualiza automaticamente a cada 10 segundos</p>
+            <p><a href="/" style="color:#00d4ff">← Voltar ao painel</a></p></body></html>`);
+        } else {
+            res.end(`<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="5">
+            <style>body{font-family:Arial,sans-serif;text-align:center;padding:60px;background:#1a1a2e;color:#eee}
+            h2{color:#ffaa00}</style></head>
+            <body><h2>⏳ Aguardando QR Code...</h2>
+            <p>Status atual: <b>${stats.status}</b></p>
+            <p>Se o bot está conectado, não é necessário escanear.</p>
+            <p>Se está desconectado, acesse <a href="/reset-sessao" style="color:#ff4444">/reset-sessao</a> para forçar novo QR.</p>
+            <p><a href="/" style="color:#00d4ff">← Voltar ao painel</a></p>
+            <p style="color:#666;font-size:12px">Atualizando em 5s...</p></body></html>`);
+        }
+        return;
+    }
+
+    // Rota reset de sessão: /reset-sessao
+    if (req.url === '/reset-sessao') {
+        try {
+            const sessaoDir = path.join(__dirname, 'sessao');
+            if (fs.existsSync(sessaoDir)) {
+                fs.readdirSync(sessaoDir).forEach(f => fs.unlinkSync(path.join(sessaoDir, f)));
+            }
+            ultimoQR = null;
+            stats.status = 'reiniciando';
+            registrarSucesso('Reset', 'Sessão apagada — gerando novo QR...');
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(`<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="5;url=/qr">
+            <style>body{font-family:Arial,sans-serif;text-align:center;padding:60px;background:#1a1a2e;color:#eee}
+            h2{color:#00ff88}</style></head>
+            <body><h2>✅ Sessão apagada!</h2>
+            <p>O bot vai gerar um novo QR Code em instantes...</p>
+            <p>Redirecionando para <a href="/qr" style="color:#00d4ff">/qr</a> em 5 segundos...</p></body></html>`);
+            setTimeout(() => iniciarBot(), 1000);
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(`<html><body style="background:#1a1a2e;color:#ff4444;font-family:Arial;text-align:center;padding:60px">
+            <h2>❌ Erro ao apagar sessão: ${err.message}</h2>
+            <a href="/" style="color:#00d4ff">Voltar</a></body></html>`);
+        }
+        return;
+    }
+
     // Rota de teste VENDIDO: /vendido-teste
     if (req.url === '/vendido-teste') {
         if (ultimoPostInstagram) {
