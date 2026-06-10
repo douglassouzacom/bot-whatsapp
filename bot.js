@@ -125,8 +125,12 @@ function gerarUrlImagem(buffer) {
 // =============================================
 //  MAPA DE POSTS DO INSTAGRAM (para marcar VENDIDO)
 // =============================================
+// Diretório persistente: DATA_DIR aponta para o disco do Render; fallback = pasta do projeto
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
 // Armazena: stanzaId da mensagem WhatsApp → instagramPostId
-const INSTAGRAM_POSTS_FILE = path.join(__dirname, 'instagram_posts.json');
+const INSTAGRAM_POSTS_FILE = path.join(DATA_DIR, 'instagram_posts.json');
 
 function carregarInstagramPosts() {
     try {
@@ -153,7 +157,7 @@ function salvarInstagramPosts() {
 const instagramPosts = carregarInstagramPosts(); // stanzaId → { postId, caption, hora }
 
 // Persiste e restaura filaRetry para dar visibilidade de retries perdidos em restart
-const FILA_RETRY_FILE = path.join(__dirname, 'fila_retry.json');
+const FILA_RETRY_FILE = path.join(DATA_DIR, 'fila_retry.json');
 
 function salvarFilaRetry() {
     try {
@@ -465,7 +469,7 @@ http.createServer(async (req, res) => {
     // Rota reset de sessão: /reset-sessao
     if (req.url === '/reset-sessao') {
         try {
-            const sessaoDir = path.join(__dirname, 'sessao');
+            const sessaoDir = path.join(DATA_DIR, 'sessao');
             if (fs.existsSync(sessaoDir)) {
                 fs.readdirSync(sessaoDir).forEach(f => fs.unlinkSync(path.join(sessaoDir, f)));
             }
@@ -660,7 +664,7 @@ let botRodando = false;
 async function iniciarBot() {
     if (botRodando) return;
     botRodando = true;
-    const { state, saveCreds } = await useMultiFileAuthState('sessao');
+    const { state, saveCreds } = await useMultiFileAuthState(path.join(DATA_DIR, 'sessao'));
 
     const sock = makeWASocket({
         auth: state,

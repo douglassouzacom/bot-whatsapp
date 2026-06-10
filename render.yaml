@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: bot-whatsapp
+    env: node
+    buildCommand: npm install
+    startCommand: node bot.js
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: MAKE_WEBHOOK
+        sync: false
+      - key: MAKE_WEBHOOK_VENDIDO
+        sync: false
+    disk:
+      name: whatsapp-data
+      mountPath: /data
+      sizeGB: 1
