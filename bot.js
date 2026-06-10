@@ -1,4 +1,10 @@
 require('dotenv').config();
+
+// Suprimir logs internos do Baileys (Signal protocol session noise)
+const _warn = console.warn.bind(console);
+const _BAILEYS_RE = /Closing open session|Closing session:|SessionEntry|_chains|chainKey|registrationId|currentRatchet|ephemeralKeyPair|rootKey|indexInfo|baseKey|remoteIdentityKey/;
+console.warn = (...a) => { if (!a.some(x => _BAILEYS_RE.test(String(x)))) _warn(...a); };
+
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
