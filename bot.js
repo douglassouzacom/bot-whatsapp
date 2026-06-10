@@ -119,7 +119,7 @@ function gerarUrlImagem(buffer) {
     const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
     imagensCache.set(token, { buffer, criadoEm: Date.now() });
     const baseUrl = (_BASE_URL_EXTERNA || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
-    return { token, url: `${baseUrl}/img/${token}` };
+    return { token, url: `${baseUrl}/img/${token}.jpg` };
 }
 
 // =============================================
@@ -552,9 +552,9 @@ http.createServer(async (req, res) => {
         return;
     }
 
-    // Rota de imagens: /img/:token
+    // Rota de imagens: /img/:token ou /img/:token.jpg
     if (req.url && req.url.startsWith('/img/')) {
-        const token = req.url.slice(5);
+        const token = req.url.slice(5).replace(/\.jpg$/i, '');
         const dado = imagensCache.get(token);
         if (dado) {
             res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' });
