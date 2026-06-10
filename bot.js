@@ -748,11 +748,30 @@ async function iniciarBot() {
                 // ── VENDIDO / RESERVADO ──────────────────────────────────────
                 if (isVendido || isReservado) {
                     const status = isVendido ? '🚫 *VENDIDO*' : '⏳ *RESERVADO*';
+                    const temMidia = msg.message?.imageMessage || msg.message?.videoMessage;
+                    const msgCitada = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const temMidiaCitada = msgCitada?.imageMessage || msgCitada?.videoMessage;
                     const stanzaIdCitado = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
                     const descricao = texto.replace(/vendido|reservado/gi, '').trim();
-                    const avisoTexto = descricao ? `${status}\n${descricao}` : status;
+                    const legendaStatus = descricao ? `${status}\n${descricao}` : status;
 
-                    await sock.sendMessage(grupoDestinoId, { text: avisoTexto });
+                    if (temMidia) {
+                        const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
+                        const tipoMidia = msg.message.imageMessage ? 'image' : 'video';
+                        const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
+                        await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: legendaStatus });
+                    } else if (temMidiaCitada) {
+                        const tipoMidia = msgCitada.imageMessage ? 'image' : 'video';
+                        const mimetype  = msgCitada[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
+                        const chaveMsg  = { id: stanzaIdCitado, remoteJid: msg.key.remoteJid, fromMe: false };
+                        const buffer    = await downloadMediaMessage(
+                            { message: msgCitada, key: chaveMsg }, 'buffer', {},
+                            { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
+                        );
+                        await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: legendaStatus });
+                    } else {
+                        await sock.sendMessage(grupoDestinoId, { text: legendaStatus });
+                    }
 
                     // Marca VENDIDO no Instagram se tiver o postId mapeado
                     if (isVendido && stanzaIdCitado) {
