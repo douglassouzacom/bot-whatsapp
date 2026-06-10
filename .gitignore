@@ -1,2 +1,5 @@
-node_modules/ 
-sessao/ 
+node_modules/
+sessao/
+.env
+instagram_posts.json
+
