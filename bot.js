@@ -341,8 +341,12 @@ async function marcarVendidoNoInstagram(stanzaIdCitado) {
         const axios = require('axios');
         const dado = instagramPosts.get(stanzaIdCitado);
 
-        if (!dado) {
-            console.log('⚠️ VENDIDO: postId do Instagram não encontrado para essa mensagem. Post pode ter sido feito antes desta sessão.');
+        if (!dado || !dado.postId) {
+            console.log(
+                '⚠️ VENDIDO: ' +
+                (!dado ? 'mensagem não mapeada (post feito antes desta sessão).'
+                       : 'postId ainda não chegou do Make.com — callback /webhook-instagram-id pendente.')
+            );
             return;
         }
 
@@ -363,6 +367,9 @@ async function marcarVendidoNoInstagram(stanzaIdCitado) {
 
 // Último post do Instagram (para /vendido-teste) — restaurado do disco se disponível
 let ultimoPostInstagram = restaurarUltimoPost();
+
+// Referência ao socket ativo — necessária para fechar corretamente no /reset-sessao
+let sockAtual = null;
 
 // Painel HTML de monitoramento
 function gerarHtmlStatus(qrDataUrl) {
@@ -473,6 +480,7 @@ http.createServer(async (req, res) => {
             if (fs.existsSync(sessaoDir)) {
                 fs.readdirSync(sessaoDir).forEach(f => fs.unlinkSync(path.join(sessaoDir, f)));
             }
+            if (sockAtual) { try { sockAtual.end(new Error('reset')); } catch {} sockAtual = null; }
             ultimoQR = null;
             botRodando = false;
             stats.status = 'reiniciando';
@@ -671,6 +679,7 @@ async function iniciarBot() {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
     });
+    sockAtual = sock;
 
     sock.ev.on('creds.update', saveCreds);
 
@@ -685,6 +694,7 @@ async function iniciarBot() {
             ultimoQR = null;
             stats.status = 'conectado';
             console.log('\n✅ Bot conectado!\n');
+            setTimeout(buscarGrupos, 3000);
         }
         if (connection === 'close') {
             stats.status = 'desconectado';
@@ -722,10 +732,6 @@ async function iniciarBot() {
             setTimeout(buscarGrupos, 10000);
         }
     }
-
-    sock.ev.on('connection.update', async ({ connection }) => {
-        if (connection === 'open') setTimeout(buscarGrupos, 3000);
-    });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
