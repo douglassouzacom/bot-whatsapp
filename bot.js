@@ -204,6 +204,17 @@ function restaurarUltimoPost() {
 const MAKE_WEBHOOK         = process.env.MAKE_WEBHOOK;
 const MAKE_WEBHOOK_VENDIDO = process.env.MAKE_WEBHOOK_VENDIDO || MAKE_WEBHOOK;
 
+// Alerta de falha do Instagram:
+// O Make.com chama /webhook-instagram-id com o postId quando publica com sucesso.
+// Se esse retorno NAO chegar dentro do tempo abaixo, a postagem falhou (cenario
+// desligado, token do Instagram expirado, etc.) e o bot avisa no WhatsApp.
+const CONFIRMACAO_TIMEOUT_MS = 5 * 60 * 1000;   // espera 5 min pela confirmacao
+const ALERTA_COOLDOWN_MS     = 30 * 60 * 1000;  // no maximo 1 alerta a cada 30 min
+// Numero (so digitos, com DDI) que recebe os alertas. Vazio = manda pro proprio
+// numero do bot (aparece como "mensagem para voce mesmo" no WhatsApp).
+const WHATSAPP_ALERTA        = (process.env.WHATSAPP_ALERTA || '').replace(/\D/g, '');
+let   ultimoAlertaInstagram  = 0;
+
 // Redimensiona para 1080x1080 com fundo desfocado da própria imagem + watermark da marca
 async function prepararImagemInstagram(buffer) {
     try {
@@ -296,6 +307,16 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
             instagramPosts.set(stanzaId, { postId: null, caption: legenda, hora: new Date().toISOString() });
             salvarInstagramPosts();
             console.log(`🔖 Aguardando postId do Make.com para msg ${stanzaId}`);
+
+            // Vigia a confirmacao: se o Make.com nao devolver o postId no prazo,
+            // a publicacao falhou silenciosamente -> avisa no WhatsApp.
+            setTimeout(() => {
+                const d = instagramPosts.get(stanzaId);
+                if (d && !d.postId) {
+                    console.warn(`⚠️ Instagram NAO confirmou msg ${stanzaId} em ${CONFIRMACAO_TIMEOUT_MS / 60000}min — alertando`);
+                    alertarFalhaInstagram(legenda);
+                }
+            }, CONFIRMACAO_TIMEOUT_MS);
         }
         // Compatibilidade: se Make retornar o postId direto na resposta, usa também
         const postId = res.data?.postId || res.data?.id || null;
@@ -362,6 +383,37 @@ async function marcarVendidoNoInstagram(stanzaIdCitado) {
 
     } catch (err) {
         registrarErro('Make/Vendido', err.message);
+    }
+}
+
+// Avisa o Douglas no WhatsApp quando o Instagram NAO confirma a publicacao.
+// Com cooldown para nao floodar quando varios carros falham em sequencia.
+async function alertarFalhaInstagram(legenda) {
+    const agora = Date.now();
+    if (agora - ultimoAlertaInstagram < ALERTA_COOLDOWN_MS) return; // ja alertou ha pouco
+    ultimoAlertaInstagram = agora;
+
+    try {
+        if (!sockAtual || !sockAtual.user) {
+            registrarErro('Instagram/Alerta', 'Sem socket ativo para enviar alerta');
+            return;
+        }
+        const destino = WHATSAPP_ALERTA
+            ? `${WHATSAPP_ALERTA}@s.whatsapp.net`
+            : `${sockAtual.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net`;
+
+        const texto =
+            `🚨 *ALERTA — Instagram não publicou*\n\n` +
+            `Um carro foi enviado pro Make.com mas o Instagram NÃO confirmou a publicação em ` +
+            `${CONFIRMACAO_TIMEOUT_MS / 60000} min.\n\n` +
+            `Provável causa: cenário do Make.com desligado ou conexão do Instagram expirada ` +
+            `(precisa reconectar o Instagram no Make.com).\n\n` +
+            `🚗 Último carro afetado:\n${legenda.replace(/\n+/g, ' ').slice(0, 90)}…`;
+
+        await sockAtual.sendMessage(destino, { text: texto });
+        registrarErro('Instagram/Alerta', 'Falha de confirmação avisada no WhatsApp');
+    } catch (err) {
+        registrarErro('Instagram/Alerta', `Não conseguiu avisar: ${err.message}`);
     }
 }
 
