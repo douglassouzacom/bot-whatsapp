@@ -156,6 +156,65 @@ function salvarInstagramPosts() {
 
 const instagramPosts = carregarInstagramPosts(); // stanzaId → { postId, caption, hora }
 
+// =============================================
+//  MAPA DOS ANÚNCIOS REENCAMINHADOS AO GRUPO 8 (para marcar VENDIDO em cima)
+// =============================================
+// Armazena: stanzaId do anúncio original (grupo Ronei) → referência da mensagem
+// que o bot postou no GRUPO 8. Permite responder ("marcar em cima") o anúncio
+// do veículo sem reenviar a foto novamente.
+const POSTS_GRUPO8_FILE = path.join(DATA_DIR, 'posts_grupo8.json');
+
+function carregarPostsGrupo8() {
+    try {
+        if (fs.existsSync(POSTS_GRUPO8_FILE)) {
+            const dados = JSON.parse(fs.readFileSync(POSTS_GRUPO8_FILE, 'utf8'));
+            const mapa = new Map(Object.entries(dados));
+            console.log(`📂 posts_grupo8.json carregado: ${mapa.size} entradas`);
+            return mapa;
+        }
+    } catch (err) {
+        console.error('Erro ao carregar posts_grupo8.json:', err.message);
+    }
+    return new Map();
+}
+
+function salvarPostsGrupo8() {
+    try {
+        fs.writeFileSync(POSTS_GRUPO8_FILE, JSON.stringify(Object.fromEntries(postsGrupo8), null, 2));
+    } catch (err) {
+        console.error('Erro ao salvar posts_grupo8.json:', err.message);
+    }
+}
+
+const postsGrupo8 = carregarPostsGrupo8(); // stanzaId original → { quoted, hora }
+
+// Guarda a referência (key + legenda) do anúncio postado no GRUPO 8.
+// Só salva o texto (sem a imagem) para serializar com segurança e sobreviver a restart.
+function registrarPostGrupo8(stanzaIdOriginal, enviada, legenda) {
+    if (!stanzaIdOriginal || !enviada?.key) return;
+    postsGrupo8.set(stanzaIdOriginal, {
+        quoted: { key: enviada.key, message: { conversation: (legenda || '🚗').slice(0, 700) } },
+        hora: new Date().toISOString(),
+    });
+    salvarPostsGrupo8();
+}
+
+// Limpa postsGrupo8 com mais de 7 dias (carro já vendido não precisa ficar em memória)
+setInterval(() => {
+    const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let removidos = 0;
+    for (const [id, dado] of postsGrupo8.entries()) {
+        if (new Date(dado.hora).getTime() < limite) {
+            postsGrupo8.delete(id);
+            removidos++;
+        }
+    }
+    if (removidos > 0) {
+        console.log(`🧹 postsGrupo8: ${removidos} entradas antigas removidas`);
+        salvarPostsGrupo8();
+    }
+}, 24 * 60 * 60 * 1000);
+
 // Persiste e restaura filaRetry para dar visibilidade de retries perdidos em restart
 const FILA_RETRY_FILE = path.join(DATA_DIR, 'fila_retry.json');
 
@@ -810,29 +869,50 @@ async function iniciarBot() {
                 // ── VENDIDO / RESERVADO ──────────────────────────────────────
                 if (isVendido || isReservado) {
                     const status = isVendido ? '🚫 *VENDIDO*' : '⏳ *RESERVADO*';
-                    const temMidia = msg.message?.imageMessage || msg.message?.videoMessage;
-                    const msgCitada = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-                    const temMidiaCitada = msgCitada?.imageMessage || msgCitada?.videoMessage;
                     const stanzaIdCitado = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
                     const descricao = texto.replace(/vendido|reservado/gi, '').trim();
                     const legendaStatus = descricao ? `${status}\n${descricao}` : status;
 
-                    if (temMidia) {
-                        const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
-                        const tipoMidia = msg.message.imageMessage ? 'image' : 'video';
-                        const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
-                        await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: legendaStatus });
-                    } else if (temMidiaCitada) {
-                        const tipoMidia = msgCitada.imageMessage ? 'image' : 'video';
-                        const mimetype  = msgCitada[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
-                        const chaveMsg  = { id: stanzaIdCitado, remoteJid: msg.key.remoteJid, fromMe: false };
-                        const buffer    = await downloadMediaMessage(
-                            { message: msgCitada, key: chaveMsg }, 'buffer', {},
-                            { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
-                        );
-                        await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: legendaStatus });
-                    } else {
-                        await sock.sendMessage(grupoDestinoId, { text: legendaStatus });
+                    // PRINCIPAL: marca "em cima" do anúncio do veículo já postado no GRUPO 8
+                    // (responde a mensagem do carro com o status, SEM reenviar a foto).
+                    let marcou = false;
+                    if (stanzaIdCitado) {
+                        const ref = postsGrupo8.get(stanzaIdCitado);
+                        if (ref?.quoted) {
+                            try {
+                                await sock.sendMessage(grupoDestinoId, { text: legendaStatus }, { quoted: ref.quoted });
+                                marcou = true;
+                                console.log(`🏷️  ${status} marcado em cima do anúncio (sem reenviar foto)`);
+                            } catch (err) {
+                                registrarErro('Vendido/Reply', err.message);
+                            }
+                        }
+                    }
+
+                    // FALLBACK: anúncio original não encontrado (carro antigo, ou bot reiniciado).
+                    // Mantém o comportamento antigo de reenviar a foto, para nunca deixar sem marcação.
+                    if (!marcou) {
+                        const temMidia = msg.message?.imageMessage || msg.message?.videoMessage;
+                        const msgCitada = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+                        const temMidiaCitada = msgCitada?.imageMessage || msgCitada?.videoMessage;
+
+                        if (temMidia) {
+                            const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
+                            const tipoMidia = msg.message.imageMessage ? 'image' : 'video';
+                            const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
+                            await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: legendaStatus });
+                        } else if (temMidiaCitada) {
+                            const tipoMidia = msgCitada.imageMessage ? 'image' : 'video';
+                            const mimetype  = msgCitada[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
+                            const chaveMsg  = { id: stanzaIdCitado, remoteJid: msg.key.remoteJid, fromMe: false };
+                            const buffer    = await downloadMediaMessage(
+                                { message: msgCitada, key: chaveMsg }, 'buffer', {},
+                                { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
+                            );
+                            await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: legendaStatus });
+                        } else {
+                            await sock.sendMessage(grupoDestinoId, { text: legendaStatus });
+                        }
                     }
 
                     // Marca VENDIDO no Instagram se tiver o postId mapeado
@@ -855,7 +935,8 @@ async function iniciarBot() {
                     const tipoMidia = msg.message.imageMessage ? 'image' : msg.message.videoMessage ? 'video' : 'document';
                     const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
 
-                    await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: textoAjustado });
+                    const enviada = await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: textoAjustado });
+                    registrarPostGrupo8(msg.key.id, enviada, textoAjustado);
                     stats.mensagensReencaminhadas++;
                     stats.diaReencaminhadas++;
 
@@ -875,7 +956,8 @@ async function iniciarBot() {
                         }
                     }
                 } else if (textoAjustado.trim()) {
-                    await sock.sendMessage(grupoDestinoId, { text: textoAjustado });
+                    const enviada = await sock.sendMessage(grupoDestinoId, { text: textoAjustado });
+                    registrarPostGrupo8(msg.key.id, enviada, textoAjustado);
                     stats.mensagensReencaminhadas++;
                     stats.diaReencaminhadas++;
                 }
