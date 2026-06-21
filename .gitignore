@@ -1,5 +1,8 @@
 node_modules/
 sessao/
+.wwebjs_auth/
+.wwebjs_cache/
 .env
 instagram_posts.json
+posts_grupo8.json
 
