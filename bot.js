@@ -46,6 +46,14 @@ function registrarSucesso(contexto, mensagem) {
     console.log(`✅ [${contexto}] ${mensagem}`);
 }
 
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 // =============================================
 //  CACHE DE IMAGENS (qualidade máxima, sem Imgur)
 // =============================================
@@ -188,6 +196,33 @@ function salvarPostsGrupo8() {
 
 const postsGrupo8 = carregarPostsGrupo8(); // stanzaId original → { quoted, hora }
 
+// =============================================
+//  PERSISTÊNCIA DOS IDs DE GRUPOS
+// =============================================
+const GRUPOS_FILE = path.join(DATA_DIR, 'grupos.json');
+
+function carregarGrupos() {
+    try {
+        if (fs.existsSync(GRUPOS_FILE)) {
+            return JSON.parse(fs.readFileSync(GRUPOS_FILE, 'utf8'));
+        }
+    } catch {}
+    return {};
+}
+
+function salvarGrupos(ids) {
+    try {
+        fs.writeFileSync(GRUPOS_FILE, JSON.stringify(ids, null, 2));
+    } catch (err) {
+        console.error('Erro ao salvar grupos.json:', err.message);
+    }
+}
+
+let _cachedGrupos = carregarGrupos();
+if (_cachedGrupos.origemId) {
+    console.log(`📂 grupos.json carregado: IDs de grupos restaurados do disco (conecta sem aguardar busca)`);
+}
+
 // Guarda a referência (key + legenda) do anúncio postado no GRUPO 8.
 // Só salva o texto (sem a imagem) para serializar com segurança e sobreviver a restart.
 function registrarPostGrupo8(stanzaIdOriginal, enviada, legenda) {
@@ -262,6 +297,10 @@ function restaurarUltimoPost() {
 // =============================================
 const MAKE_WEBHOOK         = process.env.MAKE_WEBHOOK;
 const MAKE_WEBHOOK_VENDIDO = process.env.MAKE_WEBHOOK_VENDIDO || MAKE_WEBHOOK;
+
+if (!MAKE_WEBHOOK) {
+    console.warn('⚠️  MAKE_WEBHOOK não definido — posts no Instagram NÃO funcionarão. Configure nas variáveis de ambiente.');
+}
 
 // Alerta de falha do Instagram:
 // O Make.com chama /webhook-instagram-id com o postId quando publica com sucesso.
@@ -470,7 +509,7 @@ async function alertarFalhaInstagram(legenda) {
             `🚗 Último carro afetado:\n${legenda.replace(/\n+/g, ' ').slice(0, 90)}…`;
 
         await sockAtual.sendMessage(destino, { text: texto });
-        registrarErro('Instagram/Alerta', 'Falha de confirmação avisada no WhatsApp');
+        registrarSucesso('Instagram/Alerta', 'Falha de confirmação avisada no WhatsApp');
     } catch (err) {
         registrarErro('Instagram/Alerta', `Não conseguiu avisar: ${err.message}`);
     }
@@ -500,11 +539,11 @@ function gerarHtmlStatus(qrDataUrl) {
     const corStatus = stats.status === 'conectado' ? '#00ff88' : stats.status === 'desconectado' ? '#ff4444' : '#ffaa00';
     const errosHtml = stats.erros.length === 0
         ? '<li style="color:#00ff88">Nenhum erro registrado ✅</li>'
-        : stats.erros.map(e => `<li><b>${e.hora}</b> [${e.contexto}] ${e.mensagem}</li>`).join('');
+        : stats.erros.map(e => `<li><b>${escapeHtml(e.hora)}</b> [${escapeHtml(e.contexto)}] ${escapeHtml(e.mensagem)}</li>`).join('');
 
     const filaHtml = stats.filaRetry.length === 0
         ? '<li style="color:#00ff88">Fila vazia ✅</li>'
-        : stats.filaRetry.map(f => `<li>${f.tipo} — tentativa ${f.tentativas}</li>`).join('');
+        : stats.filaRetry.map(f => `<li>${escapeHtml(f.tipo)} — tentativa ${f.tentativas}</li>`).join('');
 
     return `<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="15">
     <style>
@@ -541,8 +580,8 @@ function gerarHtmlStatus(qrDataUrl) {
 
     <h2>📌 Últimas Atividades</h2>
     <ul>
-      <li>💬 Última mensagem: ${stats.ultimaMensagem || 'nenhuma ainda'}</li>
-      <li>📸 Último Instagram: ${stats.ultimoInstagram || 'nenhum ainda'}</li>
+      <li>💬 Última mensagem: ${escapeHtml(stats.ultimaMensagem || 'nenhuma ainda')}</li>
+      <li>📸 Último Instagram: ${escapeHtml(stats.ultimoInstagram || 'nenhum ainda')}</li>
       <li>🕐 Bot iniciado em: ${new Date(stats.iniciadoEm).toLocaleString('pt-BR')}</li>
     </ul>
 
@@ -655,8 +694,9 @@ http.createServer(async (req, res) => {
             try {
                 const { stanzaId, postId } = JSON.parse(body);
                 if (stanzaId && postId) {
-                    const dado = instagramPosts.get(stanzaId) || {};
+                    const dado = instagramPosts.get(stanzaId) || { caption: '', hora: new Date().toISOString() };
                     dado.postId = postId;
+                    if (!dado.hora) dado.hora = new Date().toISOString();
                     instagramPosts.set(stanzaId, dado);
                     ultimoPostInstagram = { postId, caption: dado.caption || '' };
                     salvarInstagramPosts();
@@ -689,6 +729,22 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Health check: /health — retorna JSON para monitoramento externo e keep-alive
+    if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            status: stats.status,
+            uptime: Math.floor((Date.now() - new Date(stats.iniciadoEm)) / 1000),
+            reconexoes: stats.reconexoes,
+            mensagensRecebidas: stats.mensagensRecebidas,
+            mensagensReencaminhadas: stats.mensagensReencaminhadas,
+            instagramPostado: stats.instagramPostado,
+            instagramFalha: stats.instagramFalha,
+            filaRetry: stats.filaRetry.length,
+        }));
+        return;
+    }
+
     // Painel principal
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     if (ultimoQR) {
@@ -700,6 +756,18 @@ http.createServer(async (req, res) => {
 }).listen(process.env.PORT || 3000, () => {
     console.log('🌐 Painel de monitoramento rodando na porta ' + (process.env.PORT || 3000));
 });
+
+// Keep-alive: pinga o próprio /health a cada 14 minutos para não adormecer no Render.com
+setInterval(async () => {
+    const url = _BASE_URL_EXTERNA;
+    if (!url) return;
+    try {
+        const axios = require('axios');
+        await axios.get(`${url.replace(/\/$/, '')}/health`, { timeout: 10000 });
+    } catch (err) {
+        console.warn(`⚠️  Keep-alive falhou: ${err.message}`);
+    }
+}, 14 * 60 * 1000);
 
 // =============================================
 //  CONFIGURAÇÃO
@@ -823,9 +891,9 @@ async function iniciarBot() {
         }
     });
 
-    let grupoOrigemId  = null;
-    let grupoDestinoId = null;
-    let grupoAvisoId   = null;
+    let grupoOrigemId  = _cachedGrupos.origemId  || null;
+    let grupoDestinoId = _cachedGrupos.destinoId || null;
+    let grupoAvisoId   = _cachedGrupos.avisoId   || null;
 
     async function buscarGrupos() {
         try {
@@ -839,6 +907,11 @@ async function iniciarBot() {
             if (!grupoOrigemId)  registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);
             if (!grupoDestinoId) registrarErro('Grupos', 'DESTINO não encontrado: ' + GRUPO_DESTINO_NOME);
             if (!grupoAvisoId)   registrarErro('Grupos', 'AVISO não encontrado: '   + GRUPO_AVISO_NOME);
+
+            if (grupoOrigemId && grupoDestinoId) {
+                _cachedGrupos = { origemId: grupoOrigemId, destinoId: grupoDestinoId, avisoId: grupoAvisoId };
+                salvarGrupos(_cachedGrupos);
+            }
 
             if (grupoAvisoId) agendarAvisoMatinal(sock, grupoAvisoId);
         } catch (err) {
