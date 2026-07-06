@@ -156,6 +156,36 @@ function tamanhoPasta(dir) {
     return { bytes, arquivos };
 }
 
+// Limpa pre-keys antigas da pasta de sessão do Baileys.
+// Elas se acumulam (dezenas de milhares) e esgotam os inodes do disco → ENOSPC.
+// Mantém as `manter` mais recentes; NUNCA toca em creds.json nem nas outras chaves,
+// então NÃO desconecta o WhatsApp.
+function limparPreKeysAntigas(manter = 500) {
+    const sessaoDir = path.join(DATA_DIR, 'sessao');
+    if (!fs.existsSync(sessaoDir)) return { apagados: 0, mantidas: 0, total: 0 };
+    let preKeys;
+    try {
+        preKeys = fs.readdirSync(sessaoDir).filter(n => n.startsWith('pre-key-'));
+    } catch {
+        return { apagados: 0, mantidas: 0, total: 0 };
+    }
+    const ordenadas = preKeys.map(n => {
+        let mt = 0; try { mt = fs.statSync(path.join(sessaoDir, n)).mtimeMs; } catch {}
+        return { n, mt };
+    }).sort((a, b) => b.mt - a.mt); // mais recentes primeiro
+    let apagados = 0;
+    for (const { n } of ordenadas.slice(manter)) {
+        try { fs.unlinkSync(path.join(sessaoDir, n)); apagados++; } catch {}
+    }
+    return { apagados, mantidas: Math.min(manter, preKeys.length), total: preKeys.length };
+}
+
+// Faxina automática: remove pre-keys antigas a cada 6h para nunca mais entupir os inodes.
+setInterval(() => {
+    const r = limparPreKeysAntigas(500);
+    if (r.apagados > 0) console.log(`🧹 sessao/: ${r.apagados} pre-keys antigas removidas (mantidas ${r.mantidas})`);
+}, 6 * 60 * 60 * 1000);
+
 // =============================================
 //  MAPA DE POSTS DO INSTAGRAM (para marcar VENDIDO)
 // =============================================
@@ -815,6 +845,35 @@ http.createServer(async (req, res) => {
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ dataDir: DATA_DIR, disco, totalDataDir: fmtBytes(totalBytes), itens }, null, 2));
+        return;
+    }
+
+    // Sessão do WhatsApp: /sessao-info — composição dos arquivos e limpeza de pre-keys.
+    // Limpeza só roda com ?limpar=prekeys&confirmar=sim (evita acionamento acidental).
+    if (req.url && req.url.startsWith('/sessao-info')) {
+        const u = new URL(req.url, 'http://x');
+        const sessaoDir = path.join(DATA_DIR, 'sessao');
+        const out = { sessaoDir, existe: fs.existsSync(sessaoDir) };
+        if (out.existe) {
+            let nomes = [];
+            try { nomes = fs.readdirSync(sessaoDir); } catch {}
+            const comp = {};
+            for (const n of nomes) {
+                const chave = n === 'creds.json'
+                    ? 'creds'
+                    : (n.match(/^(pre-key|session|sender-key|app-state-sync-key|app-state-sync-version)/)?.[1] || 'outros');
+                comp[chave] = (comp[chave] || 0) + 1;
+            }
+            out.totalArquivos = nomes.length;
+            out.composicao = comp;
+            if (u.searchParams.get('limpar') === 'prekeys' && u.searchParams.get('confirmar') === 'sim') {
+                const manter = parseInt(u.searchParams.get('manter') || '500', 10);
+                out.limpeza = limparPreKeysAntigas(manter);
+                registrarSucesso('Sessao', `Limpeza de pre-keys: ${out.limpeza.apagados} apagadas, ${out.limpeza.mantidas} mantidas`);
+            }
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(out, null, 2));
         return;
     }
 
