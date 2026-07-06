@@ -375,7 +375,11 @@ ${corpo}
 #repasse #repasseminasbrasil #carrosbh #veiculosbh #seminovos #automoveis #carrosusados #minasbrasil #repassebh #comprarcarro #vendercarro #carrosminasgerais #bh`;
 }
 
-// Palavras que indicam REDUÇÃO DE PREÇO — NÃO postar no Instagram
+// Palavras que indicam REDUÇÃO DE PREÇO — NÃO postar no Instagram.
+// ATENÇÃO: NÃO adicionar 'desconto' aqui. Vendedores usam "aceita desconto"
+// como argumento de venda (negociação), não como aviso de preço reduzido.
+// Adicionar 'desconto' bloqueia anúncios normais e impede postagem no Instagram.
+// Só incluir palavras que indiquem que o preço EFETIVAMENTE BAIXOU em relação ao original.
 const PALAVRAS_ABAIXOU = ['abaixou', 'abaixei', 'baixou', 'baixei', 'baixamos', 'reduzi', 'reduzido', 'nova oferta', 'novo valor', 'preço novo', 'valor novo'];
 
 function isAnuncioAbaixouPreco(texto) {
