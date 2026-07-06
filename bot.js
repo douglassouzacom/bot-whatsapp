@@ -866,6 +866,14 @@ http.createServer(async (req, res) => {
             }
             out.totalArquivos = nomes.length;
             out.composicao = comp;
+            // Amostra dos arquivos não classificados ("outros") para identificar o padrão
+            const amostraOutros = [];
+            for (const n of nomes) {
+                const eOutro = n !== 'creds.json'
+                    && !/^(pre-key|session|sender-key|app-state-sync-key|app-state-sync-version)/.test(n);
+                if (eOutro) { if (amostraOutros.length < 40) amostraOutros.push(n); }
+            }
+            out.amostraOutros = amostraOutros;
             if (u.searchParams.get('limpar') === 'prekeys' && u.searchParams.get('confirmar') === 'sim') {
                 const manter = parseInt(u.searchParams.get('manter') || '500', 10);
                 out.limpeza = limparPreKeysAntigas(manter);
