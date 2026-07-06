@@ -41,7 +41,7 @@ Conexão do WhatsApp: primeira vez lê um **QR code** no painel. A sessão fica 
 2. O bot pega a mensagem e **soma R$1.000** em cada preço encontrado (`ACRESCIMO`).
 3. O bot reencaminha a foto + descrição ajustada pro **GRUPO 8**.
 4. O bot **guarda a referência** dessa mensagem (ver seção 6 e 9) para conseguir marcar VENDIDO depois.
-5. Em seguida, dispara o fluxo do Instagram (Fluxo B), **exceto** se o texto for redução de preço (contém "abaixou / baixou / desconto / reduzi") — aí NÃO posta no Instagram, só reencaminha pro grupo.
+5. Em seguida, dispara o fluxo do Instagram (Fluxo B), **exceto** se o texto for redução de preço — aí NÃO posta no Instagram, só reencaminha pro grupo. As palavras que indicam redução são: *abaixou, abaixei, baixou, baixei, baixamos, reduzi, reduzido, nova oferta, novo valor, preço novo, valor novo* (lista `PALAVRAS_ABAIXOU` no código).
 
 ---
 
@@ -101,6 +101,7 @@ Ficam em `DATA_DIR` (disco persistente do Render). Sobrevivem a reinícios e dep
 | Arquivo | O que guarda |
 |---------|--------------|
 | `sessao/` | Sessão do WhatsApp (evita pedir QR toda vez) |
+| `grupos.json` | IDs dos grupos de origem/destino (reconecta sem precisar buscar os grupos de novo) |
 | `instagram_posts.json` | stanzaId → postId do Instagram (pra comentar VENDIDO no post certo) |
 | `posts_grupo8.json` | stanzaId do anúncio → referência da mensagem no GRUPO 8 (pra marcar VENDIDO em cima, sem foto) |
 | `fila_retry.json` | Retries do Instagram pendentes (visibilidade em caso de reinício) |
