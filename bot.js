@@ -870,14 +870,19 @@ http.createServer(async (req, res) => {
             }
             out.totalArquivos = nomes.length;
             out.composicao = comp;
-            // Amostra dos arquivos não classificados ("outros") para identificar o padrão
-            const amostraOutros = [];
+            // Agrupa os arquivos "outros" pelo prefixo (parte antes do 1º dígito) para
+            // descobrir o tipo real que está inflando a pasta.
+            const prefixosOutros = {};
             for (const n of nomes) {
                 const eOutro = n !== 'creds.json'
                     && !/^(pre-key|session|sender-key|app-state-sync-key|app-state-sync-version)/.test(n);
-                if (eOutro) { if (amostraOutros.length < 40) amostraOutros.push(n); }
+                if (eOutro) {
+                    let pref = n.split(/\d/)[0];
+                    if (!pref) pref = '(começa-com-dígito)';
+                    prefixosOutros[pref] = (prefixosOutros[pref] || 0) + 1;
+                }
             }
-            out.amostraOutros = amostraOutros;
+            out.prefixosOutros = prefixosOutros;
             if (u.searchParams.get('limpar') === 'sessao' && u.searchParams.get('confirmar') === 'sim') {
                 const manter = parseInt(u.searchParams.get('manter') || '500', 10);
                 out.limpeza = limparSessaoAntiga(manter);
