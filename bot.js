@@ -156,34 +156,38 @@ function tamanhoPasta(dir) {
     return { bytes, arquivos };
 }
 
-// Limpa pre-keys antigas da pasta de sessão do Baileys.
-// Elas se acumulam (dezenas de milhares) e esgotam os inodes do disco → ENOSPC.
-// Mantém as `manter` mais recentes; NUNCA toca em creds.json nem nas outras chaves,
-// então NÃO desconecta o WhatsApp.
-function limparPreKeysAntigas(manter = 500) {
+// Limpa arquivos regeneráveis e volumosos da pasta de sessão do Baileys.
+// Dois tipos se acumulam às dezenas de milhares e esgotam os inodes do disco → ENOSPC:
+//   • pre-key-*     → chaves pré-geradas (o WhatsApp gera novas continuamente)
+//   • device-list-* → cache de aparelhos por número (reconsultado quando preciso)
+// Mantém os `manter` mais recentes de cada tipo. NUNCA toca em creds.json, session-*,
+// sender-key-* ou app-state-* — então NÃO desconecta o WhatsApp.
+function limparSessaoAntiga(manter = 500) {
     const sessaoDir = path.join(DATA_DIR, 'sessao');
-    if (!fs.existsSync(sessaoDir)) return { apagados: 0, mantidas: 0, total: 0 };
-    let preKeys;
-    try {
-        preKeys = fs.readdirSync(sessaoDir).filter(n => n.startsWith('pre-key-'));
-    } catch {
-        return { apagados: 0, mantidas: 0, total: 0 };
+    const resultado = {};
+    if (!fs.existsSync(sessaoDir)) return resultado;
+    let nomes;
+    try { nomes = fs.readdirSync(sessaoDir); } catch { return resultado; }
+    for (const prefixo of ['pre-key-', 'device-list-']) {
+        const doTipo = nomes.filter(n => n.startsWith(prefixo));
+        const ordenadas = doTipo.map(n => {
+            let mt = 0; try { mt = fs.statSync(path.join(sessaoDir, n)).mtimeMs; } catch {}
+            return { n, mt };
+        }).sort((a, b) => b.mt - a.mt); // mais recentes primeiro
+        let apagados = 0;
+        for (const { n } of ordenadas.slice(manter)) {
+            try { fs.unlinkSync(path.join(sessaoDir, n)); apagados++; } catch {}
+        }
+        resultado[prefixo] = { total: doTipo.length, mantidas: Math.min(manter, doTipo.length), apagados };
     }
-    const ordenadas = preKeys.map(n => {
-        let mt = 0; try { mt = fs.statSync(path.join(sessaoDir, n)).mtimeMs; } catch {}
-        return { n, mt };
-    }).sort((a, b) => b.mt - a.mt); // mais recentes primeiro
-    let apagados = 0;
-    for (const { n } of ordenadas.slice(manter)) {
-        try { fs.unlinkSync(path.join(sessaoDir, n)); apagados++; } catch {}
-    }
-    return { apagados, mantidas: Math.min(manter, preKeys.length), total: preKeys.length };
+    return resultado;
 }
 
-// Faxina automática: remove pre-keys antigas a cada 6h para nunca mais entupir os inodes.
+// Faxina automática: remove pre-keys e device-lists antigos a cada 6h (nunca mais entupir).
 setInterval(() => {
-    const r = limparPreKeysAntigas(500);
-    if (r.apagados > 0) console.log(`🧹 sessao/: ${r.apagados} pre-keys antigas removidas (mantidas ${r.mantidas})`);
+    const r = limparSessaoAntiga(500);
+    const totalApagado = Object.values(r).reduce((s, x) => s + (x.apagados || 0), 0);
+    if (totalApagado > 0) console.log(`🧹 sessao/: ${totalApagado} arquivos antigos removidos`, r);
 }, 6 * 60 * 60 * 1000);
 
 // =============================================
@@ -874,10 +878,11 @@ http.createServer(async (req, res) => {
                 if (eOutro) { if (amostraOutros.length < 40) amostraOutros.push(n); }
             }
             out.amostraOutros = amostraOutros;
-            if (u.searchParams.get('limpar') === 'prekeys' && u.searchParams.get('confirmar') === 'sim') {
+            if (u.searchParams.get('limpar') === 'sessao' && u.searchParams.get('confirmar') === 'sim') {
                 const manter = parseInt(u.searchParams.get('manter') || '500', 10);
-                out.limpeza = limparPreKeysAntigas(manter);
-                registrarSucesso('Sessao', `Limpeza de pre-keys: ${out.limpeza.apagados} apagadas, ${out.limpeza.mantidas} mantidas`);
+                out.limpeza = limparSessaoAntiga(manter);
+                const totalApagado = Object.values(out.limpeza).reduce((s, x) => s + (x.apagados || 0), 0);
+                registrarSucesso('Sessao', `Limpeza da sessão: ${totalApagado} arquivos apagados`);
             }
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
