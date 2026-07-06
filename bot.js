@@ -130,6 +130,32 @@ function gerarUrlImagem(buffer) {
     return { token, url: `${baseUrl}/img/${token}.jpg` };
 }
 
+// Helpers de diagnóstico de disco (usados na rota /disco)
+function fmtBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+    if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+    return (b / 1073741824).toFixed(2) + ' GB';
+}
+
+function tamanhoPasta(dir) {
+    let bytes = 0, arquivos = 0;
+    try {
+        for (const nome of fs.readdirSync(dir)) {
+            const p = path.join(dir, nome);
+            let st;
+            try { st = fs.statSync(p); } catch { continue; }
+            if (st.isDirectory()) {
+                const sub = tamanhoPasta(p);
+                bytes += sub.bytes; arquivos += sub.arquivos;
+            } else {
+                bytes += st.size; arquivos += 1;
+            }
+        }
+    } catch {}
+    return { bytes, arquivos };
+}
+
 // =============================================
 //  MAPA DE POSTS DO INSTAGRAM (para marcar VENDIDO)
 // =============================================
@@ -746,6 +772,49 @@ http.createServer(async (req, res) => {
             instagramFalha: stats.instagramFalha,
             filaRetry: stats.filaRetry.length,
         }));
+        return;
+    }
+
+    // Diagnóstico de disco: /disco — mostra o que ocupa espaço em DATA_DIR (só leitura)
+    if (req.url === '/disco') {
+        const itens = [];
+        try {
+            for (const nome of fs.readdirSync(DATA_DIR)) {
+                const p = path.join(DATA_DIR, nome);
+                let st;
+                try { st = fs.statSync(p); } catch { continue; }
+                if (st.isDirectory()) {
+                    const t = tamanhoPasta(p);
+                    itens.push({ nome: nome + '/', tamanho: fmtBytes(t.bytes), bytes: t.bytes, arquivos: t.arquivos });
+                } else {
+                    itens.push({ nome, tamanho: fmtBytes(st.size), bytes: st.size, arquivos: 1 });
+                }
+            }
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ erro: err.message, dataDir: DATA_DIR }));
+            return;
+        }
+        itens.sort((a, b) => b.bytes - a.bytes);
+        const totalBytes = itens.reduce((s, i) => s + i.bytes, 0);
+
+        let disco;
+        try {
+            const s = fs.statfsSync(DATA_DIR);
+            const total = s.blocks * s.bsize;
+            const livre = s.bavail * s.bsize;
+            disco = {
+                total: fmtBytes(total),
+                usado: fmtBytes(total - livre),
+                livre: fmtBytes(livre),
+                percentualUsado: ((1 - livre / total) * 100).toFixed(1) + '%',
+            };
+        } catch (e) {
+            disco = { erro: e.message };
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ dataDir: DATA_DIR, disco, totalDataDir: fmtBytes(totalBytes), itens }, null, 2));
         return;
     }
 
