@@ -157,18 +157,19 @@ function tamanhoPasta(dir) {
 }
 
 // Limpa arquivos regeneráveis e volumosos da pasta de sessão do Baileys.
-// Dois tipos se acumulam às dezenas de milhares e esgotam os inodes do disco → ENOSPC:
+// Estes tipos se acumulam às dezenas de milhares e esgotam os inodes do disco → ENOSPC:
+//   • lid-mapping-* → mapeamento LID↔número (o WhatsApp reenvia conforme as mensagens)
 //   • pre-key-*     → chaves pré-geradas (o WhatsApp gera novas continuamente)
 //   • device-list-* → cache de aparelhos por número (reconsultado quando preciso)
 // Mantém os `manter` mais recentes de cada tipo. NUNCA toca em creds.json, session-*,
-// sender-key-* ou app-state-* — então NÃO desconecta o WhatsApp.
+// sender-key-*, identity-key-* ou app-state-* — então NÃO desconecta o WhatsApp.
 function limparSessaoAntiga(manter = 500) {
     const sessaoDir = path.join(DATA_DIR, 'sessao');
     const resultado = {};
     if (!fs.existsSync(sessaoDir)) return resultado;
     let nomes;
     try { nomes = fs.readdirSync(sessaoDir); } catch { return resultado; }
-    for (const prefixo of ['pre-key-', 'device-list-']) {
+    for (const prefixo of ['lid-mapping-', 'pre-key-', 'device-list-']) {
         const doTipo = nomes.filter(n => n.startsWith(prefixo));
         const ordenadas = doTipo.map(n => {
             let mt = 0; try { mt = fs.statSync(path.join(sessaoDir, n)).mtimeMs; } catch {}
