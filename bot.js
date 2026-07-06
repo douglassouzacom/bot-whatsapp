@@ -376,7 +376,7 @@ ${corpo}
 }
 
 // Palavras que indicam REDUÇÃO DE PREÇO — NÃO postar no Instagram
-const PALAVRAS_ABAIXOU = ['abaixou', 'abaixei', 'baixou', 'baixei', 'baixamos', 'desconto', 'reduzi', 'reduzido', 'nova oferta', 'novo valor', 'preço novo', 'valor novo'];
+const PALAVRAS_ABAIXOU = ['abaixou', 'abaixei', 'baixou', 'baixei', 'baixamos', 'reduzi', 'reduzido', 'nova oferta', 'novo valor', 'preço novo', 'valor novo'];
 
 function isAnuncioAbaixouPreco(texto) {
     const lower = texto.toLowerCase();
