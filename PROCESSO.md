@@ -108,6 +108,20 @@ Ficam em `DATA_DIR` (disco persistente do Render). Sobrevivem a reinícios e dep
 
 Limpeza automática: entradas com mais de **7 dias** são removidas (carro já vendido não precisa ficar na memória).
 
+### 9.1. Faxina da sessão (proteção contra disco entupido)
+
+O disco do Render tem um **teto de ~65.536 arquivos** (inodes). A pasta `sessao/` do Baileys acumula arquivos de cache (`lid-mapping`, `pre-key`, `device-list`) às dezenas de milhares. Se estourar o teto, o bot dá **`ENOSPC`** e **trava tudo** — nem GRUPO 8, nem Instagram (é a "Falha #2", diferente do token do Make).
+
+Proteção em **4 camadas** (não depende de um único timer):
+1. **No boot** — toda vez que o bot sobe, ele faxina antes de conectar (cobre reinícios frequentes, que é justamente quando o disco enche).
+2. **A cada 30 min** — conta os arquivos; se passar de `LIMIAR_FAXINA` (padrão 20.000), faxina na hora.
+3. **A cada 6 h** — faxina de piso, para o crescimento lento.
+4. **Alerta no WhatsApp** — se mesmo após a faxina a pasta seguir acima de `LIMIAR_ALERTA` (padrão 45.000), avisa o número de `WHATSAPP_ALERTA`.
+
+A faxina mantém os **500 mais recentes** de cada tipo de cache e **nunca** toca em `creds`, `session`, `sender-key`, `identity-key` ou `app-state` → **não desloga o WhatsApp**.
+
+Diagnóstico manual: `GET /disco` (espaço e nº de arquivos) e `GET /sessao-info` (composição da sessão; `?limpar=sessao&confirmar=sim&manter=500` roda a faxina na mão).
+
 ---
 
 ## 10. Variáveis de ambiente (configuradas no Render)
@@ -125,6 +139,8 @@ Todos os segredos e ajustes ficam aqui, **não no código**:
 | `HORA_AVISO` / `MINUTO_AVISO` | Horário do aviso matinal (padrão: 9 UTC / 30 = 06:30 BRT) |
 | `DATA_DIR` | Caminho do disco persistente do Render |
 | `RENDER_EXTERNAL_URL` | URL pública (o Render preenche sozinho) — usada pra servir as imagens ao Make.com |
+| `LIMIAR_FAXINA` | (opcional) nº de arquivos da sessão que dispara a faxina preventiva (padrão: 20000) |
+| `LIMIAR_ALERTA` | (opcional) nº de arquivos que, mesmo após faxina, aciona alerta no WhatsApp (padrão: 45000) |
 
 ---
 

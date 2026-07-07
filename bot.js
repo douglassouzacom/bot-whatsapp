@@ -184,12 +184,8 @@ function limparSessaoAntiga(manter = 500) {
     return resultado;
 }
 
-// Faxina automática: remove pre-keys e device-lists antigos a cada 6h (nunca mais entupir).
-setInterval(() => {
-    const r = limparSessaoAntiga(500);
-    const totalApagado = Object.values(r).reduce((s, x) => s + (x.apagados || 0), 0);
-    if (totalApagado > 0) console.log(`🧹 sessao/: ${totalApagado} arquivos antigos removidos`, r);
-}, 6 * 60 * 60 * 1000);
+// A rotina de faxina (boot + preventiva por limiar + piso de 6h + alerta) fica logo
+// abaixo, depois que DATA_DIR é definido — ver "PROTEÇÃO CONTRA DISCO ENTUPIDO".
 
 // =============================================
 //  MAPA DE POSTS DO INSTAGRAM (para marcar VENDIDO)
@@ -197,6 +193,71 @@ setInterval(() => {
 // Diretório persistente: DATA_DIR aponta para o disco do Render; fallback = pasta do projeto
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// =============================================
+//  PROTEÇÃO CONTRA DISCO ENTUPIDO (inodes) — defesa em camadas
+// =============================================
+// O disco do Render tem teto de ~65.536 arquivos (inodes). A pasta sessao/ do
+// Baileys acumula lid-mapping/pre-key/device-list às dezenas de milhares e, ao
+// estourar, o bot para de gravar (ENOSPC) e trava TUDO (nem GRUPO 8, nem IG).
+// Não confiar num único timer — camadas independentes:
+//   1) Faxina no BOOT: roda toda vez que o processo sobe. Cobre o pior caso —
+//      reinícios frequentes (justamente quando o disco enche), quando o timer de
+//      6h reiniciava do zero e nunca chegava a disparar.
+//   2) Verificação a cada 30 min: conta os arquivos (barato) e, se passar do
+//      limiar, faxina na hora — pega crescimento rápido bem antes do teto.
+//   3) Faxina de piso a cada 6h: garante limpeza mesmo com crescimento lento.
+//   4) Alerta no WhatsApp se, mesmo após faxina, a pasta seguir crítica (sinal de
+//      que algo não-limpável cresceu — merece olho humano).
+const SESSAO_DIR    = path.join(DATA_DIR, 'sessao');
+const LIMIAR_FAXINA = parseInt(process.env.LIMIAR_FAXINA, 10) || 20000; // dispara faxina preventiva
+const LIMIAR_ALERTA = parseInt(process.env.LIMIAR_ALERTA, 10) || 45000; // avisa no WhatsApp (perigo)
+let ultimoAlertaDisco = 0;
+
+function contarArquivosSessao() {
+    try { return fs.readdirSync(SESSAO_DIR).length; } catch { return 0; }
+}
+
+function faxinaSessao(motivo) {
+    const antes = contarArquivosSessao();
+    const r = limparSessaoAntiga(500);
+    const apagados = Object.values(r).reduce((s, x) => s + (x.apagados || 0), 0);
+    const depois = contarArquivosSessao();
+    if (apagados > 0) console.log(`🧹 sessao/ (${motivo}): ${apagados} arquivos removidos (${antes}→${depois})`, r);
+    if (depois >= LIMIAR_ALERTA) alertarDiscoCritico(depois); // defesa em profundidade
+    return { antes, depois, apagados };
+}
+
+async function alertarDiscoCritico(qtd) {
+    if (!sockAtual || !sockAtual.user) return; // sem socket (ex.: boot) — só limpa, não avisa
+    const agora = Date.now();
+    if (agora - ultimoAlertaDisco < 6 * 60 * 60 * 1000) return; // no máx. 1 aviso a cada 6h
+    ultimoAlertaDisco = agora;
+    try {
+        const destino = WHATSAPP_ALERTA
+            ? `${WHATSAPP_ALERTA}@s.whatsapp.net`
+            : `${sockAtual.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net`;
+        await sockAtual.sendMessage(destino, { text:
+            `🚨 *ALERTA — disco do bot enchendo*\n\n` +
+            `A pasta da sessão está com *${qtd}* arquivos mesmo após a limpeza automática ` +
+            `(teto ~65.000). Se bater no teto, o bot para de postar (grupo e Instagram).\n\n` +
+            `Confira em /disco e /sessao-info. Limpeza manual, se precisar:\n` +
+            `/sessao-info?limpar=sessao&confirmar=sim` });
+        registrarSucesso('Disco/Alerta', `Aviso de disco enviado (${qtd} arquivos)`);
+    } catch (err) {
+        registrarErro('Disco/Alerta', err.message);
+    }
+}
+
+// Camada 1 — faxina no boot (antes de conectar; unlink libera inode mesmo com disco cheio).
+faxinaSessao('boot');
+// Camada 2 — verificação preventiva por limiar a cada 30 min.
+setInterval(() => {
+    const total = contarArquivosSessao();
+    if (total > LIMIAR_FAXINA) faxinaSessao(`preventiva ${total}>${LIMIAR_FAXINA}`);
+}, 30 * 60 * 1000);
+// Camada 3 — faxina de piso a cada 6h.
+setInterval(() => faxinaSessao('rotina 6h'), 6 * 60 * 60 * 1000);
 
 // Armazena: stanzaId da mensagem WhatsApp → instagramPostId
 const INSTAGRAM_POSTS_FILE = path.join(DATA_DIR, 'instagram_posts.json');
