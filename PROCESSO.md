@@ -162,11 +162,24 @@ Todos os segredos e ajustes ficam aqui, **não no código**:
 
 ## 13. Problema recorrente conhecido — token do Instagram expira
 
-**Sintoma:** os carros continuam chegando normal no GRUPO 8, mas param de aparecer no Instagram por dias.
+**Sintoma:** os carros continuam chegando normal no GRUPO 8, mas param de aparecer no Instagram por dias. ⚠️ O painel **engana**: "Instagram OK" continua subindo e "Falha 0", porque ele só conta o `200` que o Make devolve ao webhook — **não** a publicação real.
 
-**Causa:** a conexão do Instagram no Make.com expira (~a cada 60 dias). No histórico do Make aparece o erro **"Media ID is not available (9007, OAuthException)"** e o Make **desativa o cenário sozinho** (fica "Inactive"), empilhando tudo na fila.
+**Frequência real:** ~a cada **25–30 dias** (não os "60" teóricos). Já quebrou em 16/06 e de novo em 11/07/2026.
 
-**Como consertar:**
-1. No Make.com, editar os módulos de Instagram ("Create a photo post" e "Create a comment") e **reconectar** a Connection (re-login no Facebook).
-2. **LIMPAR a fila** ("Show queue" → apagar). **Nunca reprocessar** — as imagens antigas já morreram (o cache do bot expira em 30 min); reprocessar floda o perfil com carros velhos/vendidos e dá erro 404.
-3. Virar o cenário de **Inactive → Active**.
+**Causa:** a conexão do Instagram no Make.com expira. No histórico do Make aparece o erro **"Media ID is not available (9007, OAuthException)"** e o Make **desativa o cenário sozinho** (fica "Inactive"), empilhando os carros na fila.
+
+**Diagnóstico em 30 segundos** (confirma que é ISTO e não a Falha #2 do disco — seção 8):
+- Painel (`/`): "Reencaminhadas" subindo = carros chegam no GRUPO 8 (bot vivo). `/disco` ok. → não é o disco.
+- Abrir **instagram.com/repasseminasbrasil** e ver a data do último post publicado.
+- Se o "Último Instagram" do painel (que é o **envio**) for mais recente que o último post real do perfil → a publicação parou = token do Make.
+
+**Como consertar (passo a passo):**
+1. Make.com → abrir o cenário → **Edit**. Se pedir "Recover unsaved changes", pode **Discard** (é só posição de ícone).
+2. Abrir o módulo **"Create a photo post"** → em **Connection** clicar **Add** (criar conexão NOVA — reusar a velha e dar Save **não** resolve). Dar um **nome distinto** (ex: "Instagram Repasse 2026") pra achá-la fácil depois. **Save** → fazer o **login no Facebook e autorizar TUDO** (todas as caixinhas/páginas). Conferir que a **Page** é "Minas brasil repasse de veículos". **Save** o módulo.
+3. Abrir o módulo **"Create a comment"** (Vendido) → trocar a **Connection** no dropdown pela conexão nova → **Save**.
+4. Salvar o cenário (**Ctrl+S**).
+5. **LIMPAR a fila** ("Show queue" → selecionar tudo → **Delete**). **Nunca reprocessar** — as imagens antigas já morreram (cache do bot expira em 30 min); reprocessar floda o perfil com carros velhos/vendidos e dá 404.
+6. Virar o cenário de **Inactive → Active**.
+7. Confirmar: esperar o próximo carro do Ronei e ver se aparece no perfil.
+
+**Prevenção (pra não descobrir tarde de novo):** o bot avisa no WhatsApp quando o Instagram não confirma a publicação em 5 min (`verificarInstagramPendente`, roda a cada 5 min lendo `instagram_posts.json`; teste manual em `GET /testar-alerta`). **Só funciona se a variável `WHATSAPP_ALERTA` estiver setada no Render** com o número do Douglas (só dígitos, com DDI). Vazia = alarme vai pro próprio número do bot e ninguém vê. O painel mostra pra qual número o alarme aponta.
