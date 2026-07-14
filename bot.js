@@ -430,6 +430,9 @@ if (!MAKE_WEBHOOK) {
 // desligado, token do Instagram expirado, etc.) e o bot avisa no WhatsApp.
 const CONFIRMACAO_TIMEOUT_MS = 5 * 60 * 1000;   // espera 5 min pela confirmacao
 const ALERTA_COOLDOWN_MS     = 30 * 60 * 1000;  // no maximo 1 alerta a cada 30 min
+// So alerta sobre carros ainda "recentes". Se o bot ficou fora do ar por dias e
+// volta com um monte de posts nao confirmados, nao adianta gritar sobre carro velho.
+const JANELA_ALERTA_MAX_MS   = 6 * 60 * 60 * 1000; // 6h
 // Numero (so digitos, com DDI) que recebe os alertas. Vazio = manda pro proprio
 // numero do bot (aparece como "mensagem para voce mesmo" no WhatsApp).
 const WHATSAPP_ALERTA        = (process.env.WHATSAPP_ALERTA || '').replace(/\D/g, '');
@@ -534,9 +537,13 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
 
             // Vigia a confirmacao: se o Make.com nao devolver o postId no prazo,
             // a publicacao falhou silenciosamente -> avisa no WhatsApp.
+            // (A rede principal e o verificador periodico abaixo, que sobrevive a
+            //  reinicio; este setTimeout so adianta o aviso no caminho feliz.)
             setTimeout(() => {
                 const d = instagramPosts.get(stanzaId);
-                if (d && !d.postId) {
+                if (d && !d.postId && !d.alertado) {
+                    d.alertado = true;
+                    salvarInstagramPosts();
                     console.warn(`⚠️ Instagram NAO confirmou msg ${stanzaId} em ${CONFIRMACAO_TIMEOUT_MS / 60000}min — alertando`);
                     alertarFalhaInstagram(legenda);
                 }
@@ -641,6 +648,25 @@ async function alertarFalhaInstagram(legenda) {
     }
 }
 
+// Rede de seguranca robusta a reinicio: o setTimeout de vigilancia vive so na
+// memoria e se perde quando o bot reconecta (acontece varias vezes por dia). Este
+// verificador rele o disco e alerta sobre qualquer carro que passou do prazo sem o
+// postId do Make.com — assim uma quebra do Instagram nunca passa batida por dias.
+function verificarInstagramPendente() {
+    const agora = Date.now();
+    let mudou = false;
+    for (const [, d] of instagramPosts) {
+        if (d.postId || d.alertado) continue;
+        const idade = agora - new Date(d.hora).getTime();
+        if (idade <= CONFIRMACAO_TIMEOUT_MS) continue;   // ainda dentro do prazo, espera
+        d.alertado = true;                               // marca pra nao repetir o aviso
+        mudou = true;
+        if (idade <= JANELA_ALERTA_MAX_MS) alertarFalhaInstagram(d.caption || '(sem legenda)');
+    }
+    if (mudou) salvarInstagramPosts();
+}
+setInterval(verificarInstagramPendente, CONFIRMACAO_TIMEOUT_MS);
+
 // Último post do Instagram (para /vendido-teste) — restaurado do disco se disponível
 let ultimoPostInstagram = restaurarUltimoPost();
 
@@ -708,6 +734,9 @@ function gerarHtmlStatus(qrDataUrl) {
     <ul>
       <li>💬 Última mensagem: ${escapeHtml(stats.ultimaMensagem || 'nenhuma ainda')}</li>
       <li>📸 Último Instagram: ${escapeHtml(stats.ultimoInstagram || 'nenhum ainda')}</li>
+      <li>🔔 Alarme aponta para: ${WHATSAPP_ALERTA
+          ? '<b style="color:#00ff88">' + escapeHtml(WHATSAPP_ALERTA) + '</b>'
+          : '<b style="color:#ffaa00">⚠️ próprio bot — configure WHATSAPP_ALERTA no Render</b>'} &nbsp;<a href="/testar-alerta" style="color:#00d4ff">testar</a></li>
       <li>🕐 Bot iniciado em: ${new Date(stats.iniciadoEm).toLocaleString('pt-BR')}</li>
     </ul>
 
@@ -838,6 +867,38 @@ http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ erro: err.message }));
             }
         });
+        return;
+    }
+
+    // Rota de teste do alarme: /testar-alerta — dispara um aviso na hora e mostra
+    // pra qual numero ele foi, pra confirmar que o alarme aponta pro WhatsApp certo.
+    if (req.url === '/testar-alerta') {
+        (async () => {
+            try {
+                if (!sockAtual || !sockAtual.user) {
+                    res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+                    res.end(JSON.stringify({ ok: false, erro: 'Bot sem conexão com o WhatsApp agora — tente de novo em instantes' }));
+                    return;
+                }
+                const numeroBot = sockAtual.user.id.split(':')[0].split('@')[0];
+                const destino = (WHATSAPP_ALERTA || numeroBot) + '@s.whatsapp.net';
+                await sockAtual.sendMessage(destino, {
+                    text: '🧪 *Teste de alarme do bot Repasse*\n\nSe você recebeu esta mensagem, o alarme do Instagram está apontado para este WhatsApp. Pode ignorar. ✅'
+                });
+                res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(JSON.stringify({
+                    ok: true,
+                    enviadoPara: WHATSAPP_ALERTA || `${numeroBot} (PRÓPRIO BOT)`,
+                    whatsappAlertaConfigurado: !!WHATSAPP_ALERTA,
+                    aviso: WHATSAPP_ALERTA
+                        ? 'Alarme configurado. Confira se a mensagem chegou nesse número.'
+                        : 'ATENÇÃO: WHATSAPP_ALERTA está vazio → o alarme vai pro PRÓPRIO número do bot (você não vê). Configure WHATSAPP_ALERTA no Render com o seu número (DDI+DDD+número, só dígitos, ex: 5531999998888).',
+                }, null, 2));
+            } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(JSON.stringify({ ok: false, erro: err.message }));
+            }
+        })();
         return;
     }
 
