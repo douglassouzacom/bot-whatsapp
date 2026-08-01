@@ -1124,9 +1124,39 @@ function agendarAvisoMatinal(sock, grupoAvisoId) {
 
 let botRodando = false;
 
+// Auto-recuperacao (bug da Falha #3, 30/07): quando a sessao morre, o WhatsApp
+// fecha a conexao em loop SEM disparar "loggedOut", e o bot reconectava pra
+// sempre (7.573x) sem nunca pedir um QR novo. Contamos as falhas SEGUIDAS (sem
+// chegar a conectar): passando do limite, a sessao e' dada como morta -> apaga
+// e gera QR sozinho. Uma conexao bem-sucedida zera o contador.
+let falhasConsecutivas = 0;
+const MAX_FALHAS_ANTES_RESET = 15;
+// "Geracao" do socket: cada iniciarBot cria uma nova. Timers de sockets antigos
+// (ex: buscarGrupos) comparam com ela e param, em vez de virar zumbis eternos.
+let geracaoBot = 0;
+
+// Sessao dada como morta: apaga os arquivos e reinicia limpo -> gera novo QR.
+function apagarSessaoEReiniciar() {
+    try {
+        const sessaoDir = path.join(DATA_DIR, 'sessao');
+        if (fs.existsSync(sessaoDir)) {
+            for (const f of fs.readdirSync(sessaoDir)) {
+                try { fs.unlinkSync(path.join(sessaoDir, f)); } catch {}
+            }
+        }
+        registrarErro('Conexão', 'Sessão apagada automaticamente — escaneie o novo QR em /qr');
+    } catch (err) {
+        registrarErro('AutoReset', err.message);
+    }
+    ultimoQR = null;
+    botRodando = false;
+    setTimeout(iniciarBot, 2000);
+}
+
 async function iniciarBot() {
     if (botRodando) return;
     botRodando = true;
+    const minhaGeracao = ++geracaoBot;
     const { state, saveCreds } = await useMultiFileAuthState(path.join(DATA_DIR, 'sessao'));
 
     const sock = makeWASocket({
@@ -1148,6 +1178,7 @@ async function iniciarBot() {
         if (connection === 'open') {
             ultimoQR = null;
             stats.status = 'conectado';
+            falhasConsecutivas = 0;            // reconectou: zera o contador de falhas
             console.log('\n✅ Bot conectado!\n');
             setTimeout(buscarGrupos, 3000);
         }
@@ -1158,8 +1189,19 @@ async function iniciarBot() {
             console.log('Conexão encerrada. Reiniciando:', reiniciar);
             if (reiniciar) {
                 stats.reconexoes++;
-                registrarErro('Conexão', `Desconectado. Reconectando (tentativa ${stats.reconexoes})...`);
-                setTimeout(iniciarBot, 8000);
+                falhasConsecutivas++;
+                if (falhasConsecutivas >= MAX_FALHAS_ANTES_RESET) {
+                    // Muitas falhas seguidas sem conectar = sessao morta.
+                    // Apaga e gera QR sozinho, em vez de remar pra sempre.
+                    registrarErro('Conexão', `${falhasConsecutivas} falhas seguidas — sessão parece morta. Apagando p/ gerar novo QR.`);
+                    falhasConsecutivas = 0;
+                    apagarSessaoEReiniciar();
+                } else {
+                    // Backoff: espera cresce com as falhas (ate 60s) p/ nao martelar.
+                    const espera = Math.min(8000 * falhasConsecutivas, 60000);
+                    registrarErro('Conexão', `Desconectado. Reconectando (tentativa ${stats.reconexoes}, ${falhasConsecutivas}ª seguida em ${espera / 1000}s)...`);
+                    setTimeout(iniciarBot, espera);
+                }
             }
         }
     });
@@ -1169,6 +1211,7 @@ async function iniciarBot() {
     let grupoAvisoId   = _cachedGrupos.avisoId   || null;
 
     async function buscarGrupos() {
+        if (minhaGeracao !== geracaoBot) return;   // socket obsoleto — nao vira zumbi
         try {
             const grupos = await sock.groupFetchAllParticipating();
             for (const [id, info] of Object.entries(grupos)) {
@@ -1189,7 +1232,7 @@ async function iniciarBot() {
             if (grupoAvisoId) agendarAvisoMatinal(sock, grupoAvisoId);
         } catch (err) {
             registrarErro('buscarGrupos', err.message);
-            setTimeout(buscarGrupos, 10000);
+            if (minhaGeracao === geracaoBot) setTimeout(buscarGrupos, 10000);
         }
     }
 
