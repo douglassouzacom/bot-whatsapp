@@ -1163,6 +1163,7 @@ async function iniciarBot() {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
+        keepAliveIntervalMs: 10000,   // ping a cada 10s p/ segurar a conexao (reduz quedas por inatividade)
     });
     sockAtual = sock;
 
@@ -1185,8 +1186,9 @@ async function iniciarBot() {
         if (connection === 'close') {
             stats.status = 'desconectado';
             botRodando = false;
-            const reiniciar = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Conexão encerrada. Reiniciando:', reiniciar);
+            const codigoSaida = lastDisconnect?.error?.output?.statusCode;
+            const reiniciar = codigoSaida !== DisconnectReason.loggedOut;
+            console.log(`Conexão encerrada (código ${codigoSaida}). Reiniciando: ${reiniciar}`);
             if (reiniciar) {
                 stats.reconexoes++;
                 falhasConsecutivas++;
@@ -1199,7 +1201,7 @@ async function iniciarBot() {
                 } else {
                     // Backoff: espera cresce com as falhas (ate 60s) p/ nao martelar.
                     const espera = Math.min(8000 * falhasConsecutivas, 60000);
-                    registrarErro('Conexão', `Desconectado. Reconectando (tentativa ${stats.reconexoes}, ${falhasConsecutivas}ª seguida em ${espera / 1000}s)...`);
+                    registrarErro('Conexão', `Desconectado (cód ${codigoSaida}). Reconectando (tentativa ${stats.reconexoes}, ${falhasConsecutivas}ª seguida em ${espera / 1000}s)...`);
                     setTimeout(iniciarBot, espera);
                 }
             }
