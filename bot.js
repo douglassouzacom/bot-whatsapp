@@ -916,6 +916,18 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Carros recentes (fonte do agente Impulsionador) — só leitura, sem nada sensível.
+    // Retorna as legendas dos carros ja postados, mais recentes primeiro.
+    if (req.url === '/carros') {
+        const carros = [...instagramPosts.values()]
+            .filter(d => d && d.caption)
+            .sort((a, b) => new Date(b.hora || 0) - new Date(a.hora || 0))
+            .map(d => ({ caption: d.caption, hora: d.hora || null, postId: d.postId || null }));
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ total: carros.length, carros }, null, 2));
+        return;
+    }
+
     // Health check: /health — retorna JSON para monitoramento externo e keep-alive
     if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
