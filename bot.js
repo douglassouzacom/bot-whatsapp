@@ -530,6 +530,7 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
         if (stanzaId) {
             instagramPosts.set(stanzaId, { postId: null, caption: legenda, hora: new Date().toISOString() });
             salvarInstagramPosts();
+            registrarPostAds(stanzaId, legenda); // aprendizado: marca o carro como postado
             console.log(`🔖 Aguardando postId do Make.com para msg ${stanzaId}`);
 
             // Vigia a confirmacao: se o Make.com nao devolver o postId no prazo,
@@ -718,6 +719,87 @@ function adsParseCarro(caption = '') {
     return { modelo, ano, precoN, preco: precoN ? precoN.toLocaleString('pt-BR') : '' };
 }
 const adsFaixa = p => p < 60000 ? 'popular' : p < 120000 ? 'medio' : 'premium';
+const adsModeloBase = m => (String(m).split(' ')[0] || '').toLowerCase();
+
+// ── APRENDIZADO POR VENDA ────────────────────────────────────────────────
+// O agente aprende com o que ACONTECE de verdade: registra cada carro postado
+// e, quando e marcado VENDIDO, quanto tempo levou pra vender. Tipo que vende
+// rapido = mais procura => sobe na fila do que vale impulsionar. So usa dado
+// que o bot ja tem (sem API do Meta). Degrada gracioso: sem historico (< 3
+// vendas), nao influencia nada e o pacote segue por recencia + variedade.
+const HISTORICO_ADS_FILE = path.join(DATA_DIR, 'historico_ads.json');
+function carregarHistoricoAds() {
+    try { if (fs.existsSync(HISTORICO_ADS_FILE)) return JSON.parse(fs.readFileSync(HISTORICO_ADS_FILE, 'utf8')); }
+    catch (e) { console.error('historico_ads load:', e.message); }
+    return [];
+}
+let historicoAds = carregarHistoricoAds();
+function salvarHistoricoAds() {
+    try { fs.writeFileSync(HISTORICO_ADS_FILE, JSON.stringify(historicoAds.slice(-500), null, 2)); }
+    catch (e) { console.error('historico_ads save:', e.message); }
+}
+function registrarPostAds(stanzaId, caption) {
+    try {
+        const c = adsParseCarro(caption || '');
+        if (!c.modelo || !c.precoN) return;
+        historicoAds.push({
+            stanzaId, modelo: c.modelo, modeloBase: adsModeloBase(c.modelo),
+            ano: c.ano, precoN: c.precoN, faixa: adsFaixa(c.precoN),
+            postadoEm: new Date().toISOString(), vendidoEm: null, diasAteVenda: null,
+        });
+        salvarHistoricoAds();
+    } catch (e) { console.error('registrarPostAds:', e.message); }
+}
+function registrarVendaAds(stanzaId) {
+    try {
+        const reg = [...historicoAds].reverse().find(r => r.stanzaId === stanzaId && !r.vendidoEm);
+        if (!reg) return;
+        reg.vendidoEm = new Date().toISOString();
+        const dias = (Date.now() - new Date(reg.postadoEm).getTime()) / 864e5;
+        reg.diasAteVenda = Math.max(0, Math.round(dias * 10) / 10);
+        salvarHistoricoAds();
+    } catch (e) { console.error('registrarVendaAds:', e.message); }
+}
+// Agrega o historico em placar por faixa e por modelo (so vendas confirmadas).
+function adsAprendizado() {
+    const vendidos = historicoAds.filter(r => r.vendidoEm && typeof r.diasAteVenda === 'number');
+    const agrupar = chave => {
+        const g = {};
+        for (const r of vendidos) {
+            const k = r[chave]; if (!k) continue;
+            g[k] = g[k] || { vendas: 0, somaDias: 0 };
+            g[k].vendas++; g[k].somaDias += r.diasAteVenda;
+        }
+        for (const k in g) g[k].mediaDias = Math.round(g[k].somaDias / g[k].vendas * 10) / 10;
+        return g;
+    };
+    return { amostra: vendidos.length, porFaixa: agrupar('faixa'), porModelo: agrupar('modeloBase') };
+}
+// Nota de um carro: quanto mais rapido o tipo dele vende, maior o score.
+// Modelo pesa mais que faixa; volume de vendas da confianca (log).
+function adsScore(carro, ap) {
+    ap = ap || adsAprendizado();
+    if (ap.amostra < 3) return 0;                        // poucos dados: nao mexe
+    const gf = ap.porFaixa[adsFaixa(carro.precoN)];
+    const gm = ap.porModelo[adsModeloBase(carro.modelo)];
+    let s = 0;
+    if (gf) s += Math.max(0, 15 - gf.mediaDias) * (1 + Math.log2(1 + gf.vendas));
+    if (gm) s += Math.max(0, 15 - gm.mediaDias) * (1 + Math.log2(1 + gm.vendas)) * 1.5;
+    return Math.round(s * 10) / 10;
+}
+// Frase curta explicando por que priorizou (vazia se ainda nao ha dados).
+function adsPorque(carro, ap) {
+    ap = ap || adsAprendizado();
+    if (ap.amostra < 3) return '';
+    const gm = ap.porModelo[adsModeloBase(carro.modelo)];
+    const gf = ap.porFaixa[adsFaixa(carro.precoN)];
+    if (gm && gm.vendas >= 2 && gm.mediaDias <= 7)
+        return `🔥 ${carro.modelo.split(' ')[0]} vem vendendo rápido (${gm.vendas} em ~${gm.mediaDias}d)`;
+    if (gf && gf.vendas >= 3 && gf.mediaDias <= 7)
+        return `🔥 faixa ${adsFaixa(carro.precoN)} está saindo rápido (${gf.vendas} em ~${gf.mediaDias}d)`;
+    return '';
+}
+
 const ADS_TEMPLATES = [
     c => `🚗 Repasse da semana em BH — ${c.modelo}${c.ano ? ' ' + c.ano : ''}${c.preco ? ', R$ ' + c.preco : ''}.\nCarro conferido, pagamento à vista via PIX/TED.\nToda semana entram novos: siga o @repasseminasbrasil e veja antes de todo mundo 👇`,
     c => `${c.modelo}${c.ano ? ' ' + c.ano : ''} com preço de repasse 🚗\nAbaixo da tabela, à vista, carro conferido.\nEsse e outros estão no nosso perfil — segue o @repasseminasbrasil.`,
@@ -733,18 +815,27 @@ function adsSelecionar(itens, n) {
 }
 function adsMontarTexto() {
     const corte = Date.now() - ADS_JANELA_DIAS * 864e5;
+    const ap = adsAprendizado();
     const itens = [...instagramPosts.values()]
         .filter(d => d && d.caption)
         .map(d => ({ hora: d.hora, carro: adsParseCarro(d.caption) }))
         .filter(it => it.carro.modelo && it.carro.precoN > 0)
         .filter(it => !it.hora || new Date(it.hora).getTime() >= corte)
-        .sort((a, b) => new Date(b.hora || 0) - new Date(a.hora || 0));
+        .sort((a, b) => {
+            const sa = adsScore(a.carro, ap), sb = adsScore(b.carro, ap);
+            if (sb !== sa) return sb - sa;                        // aprendizado manda
+            return new Date(b.hora || 0) - new Date(a.hora || 0); // recencia desempata
+        });
     const pacote = adsSelecionar(itens, ADS_TOP_N);
     if (!pacote.length) return null;
     let txt = `🚀 *IMPULSIONAR ESTA SEMANA*\n${pacote.length} carros pra trazer gente nova pro perfil. Impulsione o post no Instagram (objetivo "mais visitas ao perfil", R$ 15–25/dia) e cole a legenda abaixo.\n`;
+    if (ap.amostra >= 3) txt += `_Escolha baseada em ${ap.amostra} vendas: priorizei o que vende mais rápido._\n`;
     pacote.forEach((it, i) => {
         const c = it.carro;
-        txt += `\n*${i + 1}. ${c.modelo} ${c.ano}* — R$ ${c.preco} [${adsFaixa(c.precoN)}]\n${ADS_TEMPLATES[i % ADS_TEMPLATES.length](c)}\n`;
+        const porque = adsPorque(c, ap);
+        txt += `\n*${i + 1}. ${c.modelo} ${c.ano}* — R$ ${c.preco} [${adsFaixa(c.precoN)}]\n`;
+        if (porque) txt += `${porque}\n`;
+        txt += `${ADS_TEMPLATES[i % ADS_TEMPLATES.length](c)}\n`;
     });
     return txt;
 }
@@ -1033,6 +1124,32 @@ http.createServer(async (req, res) => {
         const texto = adsMontarTexto();
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end(texto || 'Nenhum carro com preço válido na janela ainda.');
+        return;
+    }
+
+    // Placar do aprendizado (o que o agente aprendeu com as vendas): /aprendizado
+    if (req.url === '/aprendizado') {
+        const ap = adsAprendizado();
+        const totalRegistrados = historicoAds.length;
+        const aguardando = historicoAds.filter(r => !r.vendidoEm).length;
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        if (ap.amostra === 0) {
+            res.end(
+                `Ainda não há vendas registradas pra aprender.\n` +
+                `Carros postados sendo acompanhados: ${totalRegistrados}.\n` +
+                `Assim que os primeiros forem marcados VENDIDO, o placar aparece aqui.`);
+            return;
+        }
+        const linha = (nome, g) => `  ${nome}: ${g.vendas} venda(s), média ${g.mediaDias} dia(s)`;
+        const ordena = obj => Object.entries(obj).sort((a, b) => a[1].mediaDias - b[1].mediaDias);
+        let txt = `📊 APRENDIZADO — o que o agente aprendeu com ${ap.amostra} venda(s)\n`;
+        txt += `(quanto MENOS dias pra vender, mais procurado → mais prioridade no impulsionamento)\n\n`;
+        txt += `Por faixa de preço (mais rápido primeiro):\n`;
+        txt += (ordena(ap.porFaixa).map(([k, g]) => linha(k, g)).join('\n') || '  —');
+        txt += `\n\nPor modelo (mais rápido primeiro):\n`;
+        txt += (ordena(ap.porModelo).map(([k, g]) => linha(k, g)).join('\n') || '  —');
+        txt += `\n\nCarros postados aguardando venda: ${aguardando}`;
+        res.end(txt);
         return;
     }
 
@@ -1457,6 +1574,7 @@ async function iniciarBot() {
 
                     // Marca VENDIDO no Instagram se tiver o postId mapeado
                     if (isVendido && stanzaIdCitado) {
+                        registrarVendaAds(stanzaIdCitado); // aprendizado: registra tempo ate a venda
                         await marcarVendidoNoInstagram(stanzaIdCitado);
                     }
 
