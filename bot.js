@@ -13,6 +13,7 @@ const http = require('http');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
+const adsMeta = require('./ads-meta');   // motor de disparo de anuncios (Marketing API)
 
 // =============================================
 //  SISTEMA DE MONITORAMENTO E AUTO-REPARO
@@ -813,12 +814,29 @@ function adsSelecionar(itens, n) {
     for (const it of itens) { if (out.length >= n) break; if (!out.includes(it)) out.push(it); }
     return out;
 }
-function adsMontarTexto() {
+// Arquivo com os itens do ultimo pacote enviado (pra a aprovacao "SIM N" achar).
+const ARQ_PACOTE_ITENS = path.join(DATA_DIR, 'ultimo_pacote_ads_itens.json');
+function adsSalvarItens(pacote) {
+    try {
+        const itens = pacote.map((it, i) => ({
+            n: i + 1, modelo: it.carro.modelo, ano: it.carro.ano, preco: it.carro.preco,
+            postId: it.postId || null, caption: it.caption || '',
+        }));
+        fs.writeFileSync(ARQ_PACOTE_ITENS, JSON.stringify({ em: new Date().toISOString(), itens }, null, 2));
+    } catch (e) { console.error('adsSalvarItens:', e.message); }
+}
+function adsLerItens() {
+    try { if (fs.existsSync(ARQ_PACOTE_ITENS)) return JSON.parse(fs.readFileSync(ARQ_PACOTE_ITENS, 'utf8')).itens || []; }
+    catch (e) { /* sem pacote ainda */ }
+    return [];
+}
+// Monta o pacote (itens estruturados, ordenados por aprendizado + variedade).
+function adsMontarPacote() {
     const corte = Date.now() - ADS_JANELA_DIAS * 864e5;
     const ap = adsAprendizado();
     const itens = [...instagramPosts.values()]
         .filter(d => d && d.caption)
-        .map(d => ({ hora: d.hora, carro: adsParseCarro(d.caption) }))
+        .map(d => ({ hora: d.hora, postId: d.postId, caption: d.caption, carro: adsParseCarro(d.caption) }))
         .filter(it => it.carro.modelo && it.carro.precoN > 0)
         .filter(it => !it.hora || new Date(it.hora).getTime() >= corte)
         .sort((a, b) => {
@@ -826,9 +844,14 @@ function adsMontarTexto() {
             if (sb !== sa) return sb - sa;                        // aprendizado manda
             return new Date(b.hora || 0) - new Date(a.hora || 0); // recencia desempata
         });
-    const pacote = adsSelecionar(itens, ADS_TOP_N);
+    return { pacote: adsSelecionar(itens, ADS_TOP_N), ap };
+}
+function adsMontarTexto() {
+    const { pacote, ap } = adsMontarPacote();
     if (!pacote.length) return null;
-    let txt = `🚀 *IMPULSIONAR ESTA SEMANA*\n${pacote.length} carros pra trazer gente nova pro perfil. Impulsione o post no Instagram (objetivo "mais visitas ao perfil", R$ 15–25/dia) e cole a legenda abaixo.\n`;
+    adsSalvarItens(pacote);                          // guarda pra aprovacao por "SIM N"
+    const cfg = adsMeta.config();
+    let txt = `🚀 *IMPULSIONAR ESTA SEMANA*\n${pacote.length} carros pra trazer gente nova pro perfil.\n`;
     if (ap.amostra >= 3) txt += `_Escolha baseada em ${ap.amostra} vendas: priorizei o que vende mais rápido._\n`;
     pacote.forEach((it, i) => {
         const c = it.carro;
@@ -837,7 +860,37 @@ function adsMontarTexto() {
         if (porque) txt += `${porque}\n`;
         txt += `${ADS_TEMPLATES[i % ADS_TEMPLATES.length](c)}\n`;
     });
+    txt += `\n———\n💰 Pra o robô impulsionar sozinho, responda *SIM 1*, *SIM 2*... (R$ ${cfg.tetoDia}/dia por ${cfg.dias} dias; teto R$ ${cfg.tetoMes}/mês).`;
+    if (cfg.dryRun) txt += `\n_(modo simulação: ainda sem o token do Meta — mostro o que faria, sem gastar)_`;
+    txt += `\nOu impulsione você mesmo no app e cole a legenda acima.`;
     return txt;
+}
+// Processa "SIM N": sobe o anuncio do item N do ultimo pacote (com trava de teto).
+async function adsAprovar(n) {
+    const itens = adsLerItens();
+    const item = itens.find(it => it.n === n);
+    if (!item) return `Não achei o carro ${n} no último pacote. Abra /pacote-ads pra ver os números, ou /testar-pacote pra reenviar.`;
+    const post = { instagramMediaId: item.postId, modelo: item.modelo, legenda: item.caption };
+    try {
+        const r = await adsMeta.subirAnuncio({ dataDir: DATA_DIR, post });
+        if (!r.ok) return `❌ Não subi o *${item.modelo}*: ${r.motivo}.`;
+        if (r.dryRun) {
+            const p = r.plano.resumo;
+            return `🧪 *Simulação — ${item.modelo}*\nSubiria um anúncio de R$ ${p.orcamentoDia}/dia por ${p.dias} dias (R$ ${p.gastoPrevisto}), público Belo Horizonte, objetivo visitas ao perfil.\nFalta só ligar o token do Meta pra valer — aí esse mesmo *SIM* sobe de verdade. Nada foi gasto.`;
+        }
+        return `✅ *${item.modelo}* — anúncio criado *pausado* (R$ ${r.teto.orcamentoTotal}). Confira e ative no Gerenciador de Anúncios. Gasto comprometido no mês: R$ ${r.teto.totalMes} de R$ ${adsMeta.config().tetoMes}.`;
+    } catch (e) {
+        registrarErro('Ads/Aprovar', e.message);
+        return `❌ Deu erro ao subir o *${item.modelo}*: ${e.message}`;
+    }
+}
+// Verifica se um JID e do Douglas (WHATSAPP_ALERTA), ignorando o nono digito.
+function ehDoDouglas(jid) {
+    if (!jid || jid.endsWith('@g.us')) return false;                 // grupo, nao
+    const num = jid.split('@')[0].split(':')[0].replace(/\D/g, '');
+    if (!num || !WHATSAPP_ALERTA) return false;
+    const norm = s => s.replace(/^(\d{2})(\d{2})9?(\d{8})$/, '$1$2$3'); // tira o 9 do celular
+    return norm(num) === norm(WHATSAPP_ALERTA);
 }
 async function adsEnviarPacote() {
     const texto = adsMontarTexto();
@@ -1507,6 +1560,18 @@ async function iniciarBot() {
         for (const msg of messages) {
             try {
                 if (msg.key.fromMe) continue;
+
+                // Mensagem privada do Douglas: "SIM N" aprova o impulsionamento do carro N.
+                if (ehDoDouglas(msg.key.remoteJid)) {
+                    const t = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
+                    const m = t.match(/^sim\s*(\d+)$/i);
+                    if (m) {
+                        const resposta = await adsAprovar(Number(m[1]));
+                        try { await enviarAlerta(resposta); } catch (e) { registrarErro('Ads/Aprovar', e.message); }
+                    }
+                    continue;   // mensagem do Douglas nao segue pro fluxo dos grupos
+                }
+
                 if (msg.key.remoteJid !== grupoOrigemId) continue;
 
                 stats.mensagensRecebidas++;
