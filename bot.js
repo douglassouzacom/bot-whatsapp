@@ -667,6 +667,83 @@ function verificarInstagramPendente() {
 }
 setInterval(verificarInstagramPendente, CONFIRMACAO_TIMEOUT_MS);
 
+// ============================================================================
+//  IMPULSIONADOR DE ADS — 1x/semana manda no Zap os carros pra impulsionar.
+//  (mesmo cerebro do projeto impulsionador-repasse, rodando aqui 24h). Nao gasta
+//  nada: so sugere os carros + legendas dentro das regras do Meta pra o Douglas.
+// ============================================================================
+const ADS_DIA_SEMANA  = 1;   // 0=dom, 1=seg
+const ADS_HORA        = 9;   // 9h (horario de BH)
+const ADS_TOP_N       = 3;
+const ADS_JANELA_DIAS = 10;
+const ARQ_ULTIMO_ADS  = path.join(DATA_DIR, 'ultimo_pacote_ads.txt');
+
+function adsParseCarro(caption = '') {
+    const linhas = caption.split('\n').map(l => l.trim()).filter(Boolean);
+    let modelo = '';
+    const iCab = linhas.findIndex(l => /minas brasil repasse/i.test(l));
+    for (let i = iCab + 1; i < linhas.length; i++) {
+        if (!/^[\d.]+$/.test(linhas[i]) && !/mil km|^\d{4}$/i.test(linhas[i])) { modelo = linhas[i]; break; }
+    }
+    const ano    = (caption.match(/\b(20\d{2}|19\d{2})\b/) || [])[0] || '';
+    const mVal   = caption.match(/valor:?\s*R?\$?\s*([\d.]+)/i);
+    const precoN = mVal ? Number(mVal[1].replace(/\./g, '')) : 0;
+    modelo = modelo.replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    return { modelo, ano, precoN, preco: precoN ? precoN.toLocaleString('pt-BR') : '' };
+}
+const adsFaixa = p => p < 60000 ? 'popular' : p < 120000 ? 'medio' : 'premium';
+const ADS_TEMPLATES = [
+    c => `🚗 Repasse da semana em BH — ${c.modelo}${c.ano ? ' ' + c.ano : ''}${c.preco ? ', R$ ' + c.preco : ''}.\nCarro conferido, pagamento à vista via PIX/TED.\nToda semana entram novos: siga o @repasseminasbrasil e veja antes de todo mundo 👇`,
+    c => `${c.modelo}${c.ano ? ' ' + c.ano : ''} com preço de repasse 🚗\nAbaixo da tabela, à vista, carro conferido.\nEsse e outros estão no nosso perfil — segue o @repasseminasbrasil.`,
+    c => `Tá de olho em ${c.modelo} em Belo Horizonte? 👀\n${c.preco ? 'R$ ' + c.preco + ', à vista.\n' : 'À vista.\n'}Todo dia entram repasses novos: segue pra ver em primeira mão 🚗`,
+];
+function adsSelecionar(itens, n) {
+    const out = [], fx = new Set(), md = new Set();
+    const mb = it => (it.carro.modelo.split(' ')[0] || '').toLowerCase();
+    for (const it of itens) { if (out.length >= n) break; const f = adsFaixa(it.carro.precoN), m = mb(it); if (!fx.has(f) && !md.has(m)) { out.push(it); fx.add(f); md.add(m); } }
+    for (const it of itens) { if (out.length >= n) break; const m = mb(it); if (!out.includes(it) && !md.has(m)) { out.push(it); md.add(m); } }
+    for (const it of itens) { if (out.length >= n) break; if (!out.includes(it)) out.push(it); }
+    return out;
+}
+function adsMontarTexto() {
+    const corte = Date.now() - ADS_JANELA_DIAS * 864e5;
+    const itens = [...instagramPosts.values()]
+        .filter(d => d && d.caption)
+        .map(d => ({ hora: d.hora, carro: adsParseCarro(d.caption) }))
+        .filter(it => it.carro.modelo && it.carro.precoN > 0)
+        .filter(it => !it.hora || new Date(it.hora).getTime() >= corte)
+        .sort((a, b) => new Date(b.hora || 0) - new Date(a.hora || 0));
+    const pacote = adsSelecionar(itens, ADS_TOP_N);
+    if (!pacote.length) return null;
+    let txt = `🚀 *IMPULSIONAR ESTA SEMANA*\n${pacote.length} carros pra trazer gente nova pro perfil. Impulsione o post no Instagram (objetivo "mais visitas ao perfil", R$ 15–25/dia) e cole a legenda abaixo.\n`;
+    pacote.forEach((it, i) => {
+        const c = it.carro;
+        txt += `\n*${i + 1}. ${c.modelo} ${c.ano}* — R$ ${c.preco} [${adsFaixa(c.precoN)}]\n${ADS_TEMPLATES[i % ADS_TEMPLATES.length](c)}\n`;
+    });
+    return txt;
+}
+async function adsEnviarPacote() {
+    if (!sockAtual || !sockAtual.user) return;
+    const texto = adsMontarTexto();
+    if (!texto) return;
+    const destino = (WHATSAPP_ALERTA || sockAtual.user.id.split(':')[0].split('@')[0]) + '@s.whatsapp.net';
+    try {
+        await sockAtual.sendMessage(destino, { text: texto });
+        registrarSucesso('Ads', 'Pacote semanal de impulsionamento enviado no WhatsApp');
+    } catch (err) { registrarErro('Ads', err.message); }
+}
+// Agenda 1x/semana (segunda 9h BH). Verifica a cada 30min + dedup por arquivo,
+// pra sobreviver a reinicio sem duplicar nem perder. Fuso fixo em Sao Paulo.
+setInterval(() => {
+    const spStr = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour12: false });
+    const sp = new Date(spStr);
+    if (sp.getDay() !== ADS_DIA_SEMANA || sp.getHours() < ADS_HORA) return;
+    const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    try { if (fs.existsSync(ARQ_ULTIMO_ADS) && fs.readFileSync(ARQ_ULTIMO_ADS, 'utf8').trim() === hoje) return; } catch {}
+    try { fs.writeFileSync(ARQ_ULTIMO_ADS, hoje); } catch {}
+    adsEnviarPacote();
+}, 30 * 60 * 1000);
+
 // Último post do Instagram (para /vendido-teste) — restaurado do disco se disponível
 let ultimoPostInstagram = restaurarUltimoPost();
 
@@ -925,6 +1002,14 @@ http.createServer(async (req, res) => {
             .map(d => ({ caption: d.caption, hora: d.hora || null, postId: d.postId || null }));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ total: carros.length, carros }, null, 2));
+        return;
+    }
+
+    // Pacote de ads da semana (ver/testar na hora): /pacote-ads
+    if (req.url === '/pacote-ads') {
+        const texto = adsMontarTexto();
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(texto || 'Nenhum carro com preço válido na janela ainda.');
         return;
     }
 
