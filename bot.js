@@ -234,15 +234,12 @@ async function alertarDiscoCritico(qtd) {
     if (agora - ultimoAlertaDisco < 6 * 60 * 60 * 1000) return; // no máx. 1 aviso a cada 6h
     ultimoAlertaDisco = agora;
     try {
-        const destino = WHATSAPP_ALERTA
-            ? `${WHATSAPP_ALERTA}@s.whatsapp.net`
-            : `${sockAtual.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net`;
-        await sockAtual.sendMessage(destino, { text:
+        await enviarAlerta(
             `🚨 *ALERTA — disco do bot enchendo*\n\n` +
             `A pasta da sessão está com *${qtd}* arquivos mesmo após a limpeza automática ` +
             `(teto ~65.000). Se bater no teto, o bot para de postar (grupo e Instagram).\n\n` +
             `Confira em /disco e /sessao-info. Limpeza manual, se precisar:\n` +
-            `/sessao-info?limpar=sessao&confirmar=sim` });
+            `/sessao-info?limpar=sessao&confirmar=sim`);
         registrarSucesso('Disco/Alerta', `Aviso de disco enviado (${qtd} arquivos)`);
     } catch (err) {
         registrarErro('Disco/Alerta', err.message);
@@ -617,6 +614,39 @@ async function marcarVendidoNoInstagram(stanzaIdCitado) {
     }
 }
 
+// Resolve o numero de alerta para o JID que o WhatsApp REALMENTE reconhece.
+// Corrige a pegadinha do "nono digito" no Brasil: onWhatsApp devolve o JID
+// canonico (com ou sem o 9), evitando a mensagem que "envia" mas nunca chega.
+// Cacheia o resultado por numero pra nao consultar a cada envio.
+let _destinoAlertaCache = null;
+async function resolverDestinoAlerta() {
+    if (!sockAtual || !sockAtual.user) return { erro: 'sem-socket' };
+    const numeroBot = sockAtual.user.id.split(':')[0].split('@')[0];
+    const numero = (WHATSAPP_ALERTA || numeroBot).replace(/\D/g, '');
+    if (!numero) return { erro: 'sem-numero' };
+    if (_destinoAlertaCache && _destinoAlertaCache.numero === numero) return _destinoAlertaCache;
+    const d = { numero, jid: `${numero}@s.whatsapp.net`, exists: null, usouProprioBot: !WHATSAPP_ALERTA };
+    try {
+        const r = await sockAtual.onWhatsApp(numero);
+        if (r && r[0]) {
+            d.exists = !!r[0].exists;
+            if (r[0].exists && r[0].jid) d.jid = r[0].jid; // JID canonico (resolve o 9)
+        }
+    } catch (e) { d.erroConsulta = e.message; }
+    _destinoAlertaCache = d;
+    return d;
+}
+// Envia um texto pro WhatsApp de alerta, resolvendo o JID certo antes.
+// Lanca erro com motivo claro se nao der (pra rota de teste reportar).
+async function enviarAlerta(texto) {
+    const d = await resolverDestinoAlerta();
+    if (d.erro === 'sem-socket')  throw new Error('bot sem conexão com o WhatsApp');
+    if (d.erro === 'sem-numero')  throw new Error('WHATSAPP_ALERTA vazio');
+    if (d.exists === false)       throw new Error(`o número ${d.numero} não tem WhatsApp`);
+    await sockAtual.sendMessage(d.jid, { text: texto });
+    return d;
+}
+
 // Avisa o Douglas no WhatsApp quando o Instagram NAO confirma a publicacao.
 // Com cooldown para nao floodar quando varios carros falham em sequencia.
 async function alertarFalhaInstagram(legenda) {
@@ -629,10 +659,6 @@ async function alertarFalhaInstagram(legenda) {
             registrarErro('Instagram/Alerta', 'Sem socket ativo para enviar alerta');
             return;
         }
-        const destino = WHATSAPP_ALERTA
-            ? `${WHATSAPP_ALERTA}@s.whatsapp.net`
-            : `${sockAtual.user.id.split(':')[0].split('@')[0]}@s.whatsapp.net`;
-
         const texto =
             `🚨 *ALERTA — Instagram não publicou*\n\n` +
             `Um carro foi enviado pro Make.com mas o Instagram NÃO confirmou a publicação em ` +
@@ -641,7 +667,7 @@ async function alertarFalhaInstagram(legenda) {
             `(precisa reconectar o Instagram no Make.com).\n\n` +
             `🚗 Último carro afetado:\n${legenda.replace(/\n+/g, ' ').slice(0, 90)}…`;
 
-        await sockAtual.sendMessage(destino, { text: texto });
+        await enviarAlerta(texto);
         registrarSucesso('Instagram/Alerta', 'Falha de confirmação avisada no WhatsApp');
     } catch (err) {
         registrarErro('Instagram/Alerta', `Não conseguiu avisar: ${err.message}`);
@@ -723,12 +749,10 @@ function adsMontarTexto() {
     return txt;
 }
 async function adsEnviarPacote() {
-    if (!sockAtual || !sockAtual.user) return;
     const texto = adsMontarTexto();
     if (!texto) return;
-    const destino = (WHATSAPP_ALERTA || sockAtual.user.id.split(':')[0].split('@')[0]) + '@s.whatsapp.net';
     try {
-        await sockAtual.sendMessage(destino, { text: texto });
+        await enviarAlerta(texto);
         registrarSucesso('Ads', 'Pacote semanal de impulsionamento enviado no WhatsApp');
     } catch (err) { registrarErro('Ads', err.message); }
 }
@@ -957,15 +981,14 @@ http.createServer(async (req, res) => {
                     res.end(JSON.stringify({ ok: false, erro: 'Bot sem conexão com o WhatsApp agora — tente de novo em instantes' }));
                     return;
                 }
-                const numeroBot = sockAtual.user.id.split(':')[0].split('@')[0];
-                const destino = (WHATSAPP_ALERTA || numeroBot) + '@s.whatsapp.net';
-                await sockAtual.sendMessage(destino, {
-                    text: '🧪 *Teste de alarme do bot Repasse*\n\nSe você recebeu esta mensagem, o alarme do Instagram está apontado para este WhatsApp. Pode ignorar. ✅'
-                });
+                const d = await enviarAlerta('🧪 *Teste de alarme do bot Repasse*\n\nSe você recebeu esta mensagem, o alarme do Instagram está apontado para este WhatsApp. Pode ignorar. ✅');
                 res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
                 res.end(JSON.stringify({
                     ok: true,
-                    enviadoPara: WHATSAPP_ALERTA || `${numeroBot} (PRÓPRIO BOT)`,
+                    numeroConfigurado: d.numero,
+                    jidUsado: d.jid,
+                    jidDiferenteDoNumeroCru: (d.numero + '@s.whatsapp.net' !== d.jid),
+                    numeroTemWhatsapp: d.exists,
                     whatsappAlertaConfigurado: !!WHATSAPP_ALERTA,
                     aviso: WHATSAPP_ALERTA
                         ? 'Alarme configurado. Confira se a mensagem chegou nesse número.'
@@ -1016,22 +1039,24 @@ http.createServer(async (req, res) => {
     // Dispara o pacote de ads AGORA no WhatsApp (sem esperar segunda): /testar-pacote
     if (req.url === '/testar-pacote') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        if (!sockAtual || !sockAtual.user) {
-            res.end('Bot sem conexão com o WhatsApp agora — não deu pra enviar. Tente de novo em 1 min.');
-            return;
-        }
         const texto = adsMontarTexto();
         if (!texto) {
             res.end('Nenhum carro com preço válido na janela ainda — nada pra enviar.');
             return;
         }
-        const destino = (WHATSAPP_ALERTA || sockAtual.user.id.split(':')[0].split('@')[0]) + '@s.whatsapp.net';
         try {
-            await sockAtual.sendMessage(destino, { text: texto });
+            const d = await enviarAlerta(texto);
             registrarSucesso('Ads', 'Pacote de teste enviado no WhatsApp (/testar-pacote)');
-            res.end('Pacote enviado no seu WhatsApp (' + (WHATSAPP_ALERTA || 'próprio bot') + '). Confere o Zap.');
+            res.end(
+                `Pacote enviado.\n` +
+                `Número configurado: ${d.numero}\n` +
+                `JID que o WhatsApp reconhece: ${d.jid}\n` +
+                (d.numero + '@s.whatsapp.net' !== d.jid
+                    ? `⚠️ O JID é DIFERENTE do número cru — era esse o motivo de não chegar antes. Agora vai pro JID certo.\n`
+                    : `JID igual ao número (sem pegadinha do 9).\n`) +
+                (d.exists === false ? `⚠️ ATENÇÃO: esse número não consta no WhatsApp — confira o WHATSAPP_ALERTA no Render.\n` : ``) +
+                `Confere o seu Zap agora.`);
         } catch (err) {
-            registrarErro('Ads', err.message);
             res.end('Falhou ao enviar: ' + err.message);
         }
         return;
