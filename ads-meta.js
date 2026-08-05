@@ -10,9 +10,9 @@
 //
 //  Config por variaveis de ambiente (todas com padrao seguro):
 //    META_ADS_TOKEN        token do System User (SEM ele => dry-run automatico)
-//    META_AD_ACCOUNT_ID    conta de anuncios (padrao 625461195117309)
-//    META_PAGE_ID          id da Pagina do Facebook vinculada
-//    META_IG_ID            id da conta do Instagram (universoagvnet)
+//    META_AD_ACCOUNT_ID    conta "Minas Brasil Repasse" (padrao 186603184330159)
+//    META_PAGE_ID          Pagina "Minas brasil repasse de veiculos" (padrao 1131403096722935)
+//    META_IG_ID            perfil @repasseminasbrasil (padrao 17841448189772049)
 //    ADS_TETO_DIA          teto R$/dia por carro           (padrao 20)
 //    ADS_TETO_MES          teto R$/mes somando tudo         (padrao 300)
 //    ADS_DIAS_CAMPANHA     dias que cada anuncio roda       (padrao 5)
@@ -31,9 +31,9 @@ function config() {
     const token = process.env.META_ADS_TOKEN || '';
     return {
         token,
-        adAccount: String(process.env.META_AD_ACCOUNT_ID || '625461195117309').replace(/^act_/, ''),
-        pageId:    process.env.META_PAGE_ID || '',
-        igId:      process.env.META_IG_ID   || '',
+        adAccount: String(process.env.META_AD_ACCOUNT_ID || '186603184330159').replace(/^act_/, ''), // Minas Brasil Repasse
+        pageId:    process.env.META_PAGE_ID || '1131403096722935',   // Pagina "Minas brasil repasse de veiculos"
+        igId:      process.env.META_IG_ID   || '17841448189772049',  // @repasseminasbrasil
         tetoDia:   Number(process.env.ADS_TETO_DIA || 20),
         tetoMes:   Number(process.env.ADS_TETO_MES || 300),
         dias:      Number(process.env.ADS_DIAS_CAMPANHA || 5),
