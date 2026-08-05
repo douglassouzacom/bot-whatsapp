@@ -1013,6 +1013,30 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Dispara o pacote de ads AGORA no WhatsApp (sem esperar segunda): /testar-pacote
+    if (req.url === '/testar-pacote') {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        if (!sockAtual || !sockAtual.user) {
+            res.end('Bot sem conexão com o WhatsApp agora — não deu pra enviar. Tente de novo em 1 min.');
+            return;
+        }
+        const texto = adsMontarTexto();
+        if (!texto) {
+            res.end('Nenhum carro com preço válido na janela ainda — nada pra enviar.');
+            return;
+        }
+        const destino = (WHATSAPP_ALERTA || sockAtual.user.id.split(':')[0].split('@')[0]) + '@s.whatsapp.net';
+        try {
+            await sockAtual.sendMessage(destino, { text: texto });
+            registrarSucesso('Ads', 'Pacote de teste enviado no WhatsApp (/testar-pacote)');
+            res.end('Pacote enviado no seu WhatsApp (' + (WHATSAPP_ALERTA || 'próprio bot') + '). Confere o Zap.');
+        } catch (err) {
+            registrarErro('Ads', err.message);
+            res.end('Falhou ao enviar: ' + err.message);
+        }
+        return;
+    }
+
     // Health check: /health — retorna JSON para monitoramento externo e keep-alive
     if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
