@@ -92,6 +92,7 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
             objective: 'OUTCOME_ENGAGEMENT',       // visitas ao perfil / engajamento
             special_ad_categories: [],
             status: 'PAUSED',                       // sobe pausado; ativa so apos conferir
+            is_adset_budget_sharing_enabled: false, // orcamento fica no conjunto (nao CBO): a API v21 exige declarar
         },
         adset: {
             name: `Repasse | ${modelo}`,
