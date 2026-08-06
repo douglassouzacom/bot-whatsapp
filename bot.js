@@ -1232,6 +1232,20 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Dispara um carro do ultimo pacote AGORA, direto (sem depender do "SIM" no Zap): /disparo-teste?n=1
+    // Usa a MESMA logica do "SIM N" (adsAprovar) — sobe o anuncio PAUSADO, com trava de teto.
+    if (req.url.startsWith('/disparo-teste')) {
+        const n = Number(new URL(req.url, 'http://x').searchParams.get('n') || 1);
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        try {
+            const resposta = await adsAprovar(n);
+            res.end(resposta);
+        } catch (err) {
+            res.end('Falhou no disparo: ' + err.message);
+        }
+        return;
+    }
+
     // Health check: /health — retorna JSON para monitoramento externo e keep-alive
     if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1559,19 +1573,23 @@ async function iniciarBot() {
 
         for (const msg of messages) {
             try {
-                if (msg.key.fromMe) continue;
-
-                // Mensagem privada do Douglas: "SIM N" aprova o impulsionamento do carro N.
+                // Comando "SIM N" do Douglas: aprova o impulsionamento do carro N.
+                // Vem ANTES do filtro fromMe de proposito: quando o bot roda no PROPRIO
+                // numero do Douglas, a resposta dele no chat "consigo mesmo" chega como
+                // fromMe=true e seria descartada. As msgs que o bot envia (pacote/resposta)
+                // tambem batem aqui, mas nao casam a regex do "SIM N", entao sao ignoradas.
                 if (ehDoDouglas(msg.key.remoteJid)) {
                     const t = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
                     const m = t.match(/^sim\s*(\d+)$/i);
                     if (m) {
+                        registrarSucesso('Ads', `Recebi "SIM ${m[1]}" do Douglas — subindo o anuncio`);
                         const resposta = await adsAprovar(Number(m[1]));
                         try { await enviarAlerta(resposta); } catch (e) { registrarErro('Ads/Aprovar', e.message); }
                     }
                     continue;   // mensagem do Douglas nao segue pro fluxo dos grupos
                 }
 
+                if (msg.key.fromMe) continue;
                 if (msg.key.remoteJid !== grupoOrigemId) continue;
 
                 stats.mensagensRecebidas++;
