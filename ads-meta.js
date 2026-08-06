@@ -98,14 +98,13 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
             name: `Repasse | ${modelo}`,
             daily_budget: Math.round(orcamentoDia * 100),  // centavos (BRL)
             billing_event: 'IMPRESSIONS',
-            optimization_goal: 'PROFILE_VISITS',
+            optimization_goal: 'POST_ENGAGEMENT',   // impulsiona o post (boost) — valor robusto no OUTCOME_ENGAGEMENT
             end_time_dias: dias,
             targeting: {
                 geo_locations: { cities: [{ key: '2430536', radius: 40, distance_unit: 'kilometer' }], location_types: ['home', 'recent'] }, // Belo Horizonte
                 age_min: 18, age_max: 65,
                 publisher_platforms: ['instagram'],
             },
-            promoted_object: { page_id: cfg.pageId || '(META_PAGE_ID)' },
         },
         criativo: { instagram_media_id: instagramMediaId || '(id do post)' },
         resumo: { orcamentoDia, dias, gastoPrevisto: reais, modelo },
@@ -149,7 +148,7 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias }) {
     const endTime = new Date(Date.now() + dias * 864e5).toISOString();
     const adset = await _post(`${acct}/adsets`, cfg, {
         ...plano.adset, campaign_id: camp.id, end_time: endTime, status: 'PAUSED',
-        targeting: plano.adset.targeting, promoted_object: { page_id: cfg.pageId },
+        targeting: plano.adset.targeting,
     });
     const creative = await _post(`${acct}/adcreatives`, cfg, {
         name: `Repasse | ${post.modelo}`,
