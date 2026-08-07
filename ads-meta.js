@@ -97,6 +97,7 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
         adset: {
             name: `Repasse | ${modelo}`,
             daily_budget: Math.round(orcamentoDia * 100),  // centavos (BRL)
+            bid_strategy: 'LOWEST_COST_WITHOUT_CAP',  // menor custo automatico (nao exige lance manual)
             billing_event: 'IMPRESSIONS',
             optimization_goal: 'POST_ENGAGEMENT',   // impulsiona o post (boost) — valor robusto no OUTCOME_ENGAGEMENT
             end_time_dias: dias,
@@ -152,7 +153,6 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias }) {
     });
     const creative = await _post(`${acct}/adcreatives`, cfg, {
         name: `Repasse | ${post.modelo}`,
-        object_story_id: undefined,
         instagram_user_id: cfg.igId,
         source_instagram_media_id: post.instagramMediaId,
     });
