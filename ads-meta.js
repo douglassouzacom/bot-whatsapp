@@ -90,7 +90,7 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
         conta: `act_${cfg.adAccount}`,
         campanha: {
             name: `Repasse | ${modelo} | ${_mesAtual()}`,
-            objective: 'OUTCOME_TRAFFIC',          // leva cliques ao perfil do Instagram
+            objective: 'OUTCOME_ENGAGEMENT',       // engajamento -> visitas ao perfil do Instagram
             special_ad_categories: [],
             status: 'PAUSED',                       // sobe pausado; ativa so apos conferir
             is_adset_budget_sharing_enabled: false, // orcamento fica no conjunto (nao CBO): a API v21 exige declarar
@@ -100,8 +100,9 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
             daily_budget: Math.round(orcamentoDia * 100),  // centavos (BRL)
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP',  // menor custo automatico (nao exige lance manual)
             billing_event: 'IMPRESSIONS',
-            optimization_goal: 'LINK_CLICKS',       // cliques que levam ao perfil
+            optimization_goal: 'VISIT_INSTAGRAM_PROFILE',  // otimiza pra VISITAS AO PERFIL do Instagram
             destination_type: 'INSTAGRAM_PROFILE',  // destino do anuncio: o perfil @repasseminasbrasil
+            promoted_object: { page_id: cfg.pageId }, // pagina vinculada (objeto a promover)
             end_time_dias: dias,
             targeting: {
                 geo_locations: { cities: [{ key: '2430536', radius: 40, distance_unit: 'kilometer' }], location_types: ['home', 'recent'] }, // Belo Horizonte
