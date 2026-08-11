@@ -100,9 +100,7 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
             daily_budget: Math.round(orcamentoDia * 100),  // centavos (BRL)
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP',  // menor custo automatico (nao exige lance manual)
             billing_event: 'IMPRESSIONS',
-            optimization_goal: 'VISIT_INSTAGRAM_PROFILE',  // otimiza pra VISITAS AO PERFIL do Instagram
-            destination_type: 'INSTAGRAM_PROFILE',  // destino do anuncio: o perfil @repasseminasbrasil
-            promoted_object: { page_id: cfg.pageId }, // pagina vinculada (objeto a promover)
+            optimization_goal: 'VISIT_INSTAGRAM_PROFILE',  // otimiza pra VISITAS AO PERFIL do Instagram (define o destino)
             end_time_dias: dias,
             targeting: {
                 geo_locations: { cities: [{ key: '2430536', radius: 40, distance_unit: 'kilometer' }], location_types: ['home', 'recent'] }, // Belo Horizonte
