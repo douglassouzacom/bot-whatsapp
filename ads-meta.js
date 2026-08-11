@@ -90,7 +90,7 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
         conta: `act_${cfg.adAccount}`,
         campanha: {
             name: `Repasse | ${modelo} | ${_mesAtual()}`,
-            objective: 'OUTCOME_ENGAGEMENT',       // engajamento -> visitas ao perfil do Instagram
+            objective: 'OUTCOME_TRAFFIC',          // Trafego: comporta VISIT_INSTAGRAM_PROFILE (visitas ao perfil)
             special_ad_categories: [],
             status: 'PAUSED',                       // sobe pausado; ativa so apos conferir
             is_adset_budget_sharing_enabled: false, // orcamento fica no conjunto (nao CBO): a API v21 exige declarar
