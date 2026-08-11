@@ -1246,6 +1246,30 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Politica de privacidade do app (URL exigida pra publicar o app no Meta): /privacidade
+    if (req.url === '/privacidade' || req.url === '/privacy') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de Privacidade — Minas Brasil Repasse</title>
+<style>body{font-family:system-ui,Arial,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.6;color:#222}h1{font-size:1.5rem}h2{font-size:1.1rem;margin-top:1.6em}small{color:#666}</style>
+</head><body>
+<h1>Política de Privacidade</h1>
+<small>Minas Brasil Repasse de Veículos — atualizado em 07/08/2026</small>
+<h2>1. Sobre o aplicativo</h2>
+<p>Este aplicativo é de uso interno da Minas Brasil Repasse de Veículos para publicar anúncios de veículos e gerenciar conteúdo e anúncios no perfil <strong>@repasseminasbrasil</strong> do Instagram, por meio das APIs oficiais da Meta.</p>
+<h2>2. Dados coletados</h2>
+<p>O aplicativo <strong>não coleta, não armazena e não compartilha dados pessoais de usuários finais</strong>. Ele apenas publica conteúdo (fotos e descrições de veículos) e cria/gerencia campanhas de anúncios na conta comercial da própria empresa.</p>
+<h2>3. Uso das informações</h2>
+<p>As informações processadas (fotos e textos dos veículos) são usadas exclusivamente para divulgar os veículos disponíveis para repasse.</p>
+<h2>4. Compartilhamento</h2>
+<p>Nenhum dado é vendido ou compartilhado com terceiros.</p>
+<h2>5. Contato</h2>
+<p>Dúvidas sobre esta política: <a href="mailto:douglassouza.com@gmail.com">douglassouza.com@gmail.com</a>.</p>
+</body></html>`);
+        return;
+    }
+
     // Health check: /health — retorna JSON para monitoramento externo e keep-alive
     if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
