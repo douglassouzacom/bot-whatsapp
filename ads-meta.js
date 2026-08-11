@@ -90,7 +90,7 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
         conta: `act_${cfg.adAccount}`,
         campanha: {
             name: `Repasse | ${modelo} | ${_mesAtual()}`,
-            objective: 'OUTCOME_ENGAGEMENT',       // visitas ao perfil / engajamento
+            objective: 'OUTCOME_TRAFFIC',          // leva cliques ao perfil do Instagram
             special_ad_categories: [],
             status: 'PAUSED',                       // sobe pausado; ativa so apos conferir
             is_adset_budget_sharing_enabled: false, // orcamento fica no conjunto (nao CBO): a API v21 exige declarar
@@ -100,7 +100,8 @@ function montarPlano(cfg, { instagramMediaId, modelo, legenda }, orcamentoDia, d
             daily_budget: Math.round(orcamentoDia * 100),  // centavos (BRL)
             bid_strategy: 'LOWEST_COST_WITHOUT_CAP',  // menor custo automatico (nao exige lance manual)
             billing_event: 'IMPRESSIONS',
-            optimization_goal: 'POST_ENGAGEMENT',   // impulsiona o post (boost) — valor robusto no OUTCOME_ENGAGEMENT
+            optimization_goal: 'LINK_CLICKS',       // cliques que levam ao perfil
+            destination_type: 'INSTAGRAM_PROFILE',  // destino do anuncio: o perfil @repasseminasbrasil
             end_time_dias: dias,
             targeting: {
                 geo_locations: { cities: [{ key: '2430536', radius: 40, distance_unit: 'kilometer' }], location_types: ['home', 'recent'] }, // Belo Horizonte
@@ -156,7 +157,6 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias }) {
         name: `Repasse | ${post.modelo}`,
         instagram_user_id: cfg.igId,
         source_instagram_media_id: post.instagramMediaId,
-        call_to_action: { type: 'LEARN_MORE', value: { link: cfg.linkDestino } }, // destino do clique: grupo WhatsApp do repasse
     });
     const ad = await _post(`${acct}/ads`, cfg, {
         name: `Repasse | ${post.modelo}`, adset_id: adset.id,
