@@ -37,6 +37,7 @@ function config() {
         tetoDia:   Number(process.env.ADS_TETO_DIA || 20),
         tetoMes:   Number(process.env.ADS_TETO_MES || 300),
         dias:      Number(process.env.ADS_DIAS_CAMPANHA || 5),
+        linkDestino: process.env.ADS_LINK_DESTINO || 'https://chat.whatsapp.com/FvC5c8fpgvg5tWYWS4r4vk', // grupo WhatsApp do repasse
         dryRun:    !token,                 // sem token = simulacao (nao gasta)
     };
 }
@@ -155,6 +156,7 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias }) {
         name: `Repasse | ${post.modelo}`,
         instagram_user_id: cfg.igId,
         source_instagram_media_id: post.instagramMediaId,
+        call_to_action: { type: 'LEARN_MORE', value: { link: cfg.linkDestino } }, // destino do clique: grupo WhatsApp do repasse
     });
     const ad = await _post(`${acct}/ads`, cfg, {
         name: `Repasse | ${post.modelo}`, adset_id: adset.id,
