@@ -838,6 +838,7 @@ function adsMontarPacote() {
         .filter(d => d && d.caption)
         .map(d => ({ hora: d.hora, postId: d.postId, caption: d.caption, carro: adsParseCarro(d.caption) }))
         .filter(it => it.carro.modelo && it.carro.precoN > 0)
+        .filter(it => it.postId)   // so da pra impulsionar post que EXISTE no IG (postId confirmado pelo Make)
         .filter(it => !it.hora || new Date(it.hora).getTime() >= corte)
         .sort((a, b) => {
             const sa = adsScore(a.carro, ap), sb = adsScore(b.carro, ap);
