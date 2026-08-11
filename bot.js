@@ -1238,8 +1238,9 @@ http.createServer(async (req, res) => {
         const n = Number(new URL(req.url, 'http://x').searchParams.get('n') || 1);
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         try {
+            const item = adsLerItens().find(it => it.n === n);
             const resposta = await adsAprovar(n);
-            res.end(resposta);
+            res.end(`carro ${n}: ${item?.modelo}\npostId guardado: ${item?.postId}\n---\n${resposta}`);
         } catch (err) {
             res.end('Falhou no disparo: ' + err.message);
         }
