@@ -861,9 +861,13 @@ function adsMontarTexto() {
         if (porque) txt += `${porque}\n`;
         txt += `${ADS_TEMPLATES[i % ADS_TEMPLATES.length](c)}\n`;
     });
-    txt += `\n———\n💰 Pra o robô impulsionar sozinho, responda *SIM 1*, *SIM 2*... (R$ ${cfg.tetoDia}/dia por ${cfg.dias} dias; teto R$ ${cfg.tetoMes}/mês).`;
-    if (cfg.dryRun) txt += `\n_(modo simulação: ainda sem o token do Meta — mostro o que faria, sem gastar)_`;
-    txt += `\nOu impulsione você mesmo no app e cole a legenda acima.`;
+    txt += `\n———\n📲 *Pra impulsionar (leva gente pro seu perfil):*\n` +
+           `1. Abra o post do carro no Instagram\n` +
+           `2. Toque em *Impulsionar publicação*\n` +
+           `3. Objetivo: *Mais visitas ao perfil*\n` +
+           `4. Público: *Belo Horizonte* • ~R$ ${cfg.tetoDia}/dia por ${cfg.dias} dias\n` +
+           `5. Confirmar\n` +
+           `\nDica: 1 carro por vez pra medir qual traz mais seguidor. A legenda acima já está pronta pra colar.`;
     return txt;
 }
 // Processa "SIM N": sobe o anuncio do item N do ultimo pacote (com trava de teto).
