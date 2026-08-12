@@ -925,6 +925,20 @@ function adsTextoResultado(campanhas) {
     }
     return txt;
 }
+// Resumo da semana (postados, vendidos, tempo medio, o que vende mais rapido) — vai junto do pacote de segunda.
+function adsTextoRelatorio() {
+    const semana = Date.now() - 7 * 864e5;
+    const postados = historicoAds.filter(r => r.postadoEm && new Date(r.postadoEm).getTime() >= semana);
+    const vendidos = historicoAds.filter(r => r.vendidoEm && new Date(r.vendidoEm).getTime() >= semana);
+    const media = vendidos.length ? Math.round(vendidos.reduce((s, r) => s + (r.diasAteVenda || 0), 0) / vendidos.length * 10) / 10 : null;
+    const ap = adsAprendizado();
+    const top = Object.entries(ap.porModelo).sort((a, b) => a[1].mediaDias - b[1].mediaDias)[0];
+    let txt = `📈 *RESUMO DA SEMANA*\n`;
+    txt += `• Carros postados: ${postados.length}\n`;
+    txt += `• Vendidos: ${vendidos.length}` + (media != null ? ` (média ${media} dias pra vender)` : '') + `\n`;
+    if (top) txt += `• Vende mais rápido: ${top[0]} (~${top[1].mediaDias} dias)\n`;
+    return txt;
+}
 // Verifica se um JID e do Douglas (WHATSAPP_ALERTA), ignorando o nono digito.
 function ehDoDouglas(jid) {
     if (!jid || jid.endsWith('@g.us')) return false;                 // grupo, nao
@@ -937,8 +951,8 @@ async function adsEnviarPacote() {
     const texto = adsMontarTexto();
     if (!texto) return;
     try {
-        await enviarAlerta(texto);
-        registrarSucesso('Ads', 'Pacote semanal de impulsionamento enviado no WhatsApp');
+        await enviarAlerta(adsTextoRelatorio() + '\n———\n' + texto);   // resumo da semana + pacote
+        registrarSucesso('Ads', 'Relatório + pacote semanal enviados no WhatsApp');
     } catch (err) { registrarErro('Ads', err.message); }
 }
 // Agenda 1x/semana (segunda 9h BH). Verifica a cada 30min + dedup por arquivo,
@@ -1295,6 +1309,17 @@ http.createServer(async (req, res) => {
         } catch (err) {
             res.end('Falhou ao enviar: ' + err.message);
         }
+        return;
+    }
+
+    // Resumo da semana (postados, vendidos, tempo medio): /relatorio  (?avisar=1 tambem manda no Zap)
+    if (req.url.startsWith('/relatorio')) {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        const txt = adsTextoRelatorio();
+        if (new URL(req.url, 'http://x').searchParams.get('avisar') === '1') {
+            try { await enviarAlerta(txt); } catch (e) { registrarErro('Ads/Relatorio', e.message); }
+        }
+        res.end(txt);
         return;
     }
 
