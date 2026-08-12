@@ -955,6 +955,22 @@ async function adsEnviarPacote() {
         registrarSucesso('Ads', 'Relatório + pacote semanal enviados no WhatsApp');
     } catch (err) { registrarErro('Ads', err.message); }
 }
+// Impulsiona SOZINHO o melhor carro da semana (o topo do pacote) — so quando ADS_AUTO=1 no Render.
+// Desligado por padrao: e gastar dinheiro sozinho. Sempre respeita o teto e avisa no Zap.
+async function adsImpulsionarAuto() {
+    if (process.env.ADS_AUTO !== '1') return;   // trava: so roda se o Douglas ligar no Render
+    try {
+        const { pacote } = adsMontarPacote();
+        const top = pacote[0];
+        if (!top || !top.postId) return;         // sem carro impulsionavel: nao faz nada
+        const post = { instagramMediaId: top.postId, modelo: top.carro.modelo, legenda: top.caption };
+        const r = await adsMeta.subirAnuncio({ dataDir: DATA_DIR, post, ativar: true });
+        if (!r.ok) { await enviarAlerta(`🤖 Auto-impulsionamento pulou o *${top.carro.modelo}*: ${r.motivo}.`); return; }
+        registrarImpulsionadoAds(top.postId);
+        await enviarAlerta(`🤖 *Impulsionei sozinho* o *${top.carro.modelo}* (o que mais tende a render essa semana). Ativo, R$ ${r.teto.orcamentoTotal} por ${adsMeta.config().dias} dias. Comprometido no mês: R$ ${r.teto.totalMes} de R$ ${adsMeta.config().tetoMes}.`);
+        registrarSucesso('Ads', `Auto-impulsionamento: ${top.carro.modelo}`);
+    } catch (e) { registrarErro('Ads/Auto', e.message); }
+}
 // Agenda 1x/semana (segunda 9h BH). Verifica a cada 30min + dedup por arquivo,
 // pra sobreviver a reinicio sem duplicar nem perder. Fuso fixo em Sao Paulo.
 setInterval(() => {
@@ -965,6 +981,7 @@ setInterval(() => {
     try { if (fs.existsSync(ARQ_ULTIMO_ADS) && fs.readFileSync(ARQ_ULTIMO_ADS, 'utf8').trim() === hoje) return; } catch {}
     try { fs.writeFileSync(ARQ_ULTIMO_ADS, hoje); } catch {}
     adsEnviarPacote();
+    adsImpulsionarAuto();   // se ADS_AUTO=1, impulsiona sozinho o melhor da semana (senao nao faz nada)
 }, 30 * 60 * 1000);
 
 // Monitor de resultado dos anuncios: 1x/dia avisa no Zap como estao rendendo (dedup por dia).
