@@ -871,19 +871,22 @@ function adsMontarTexto() {
     return txt;
 }
 // Processa "SIM N": sobe o anuncio do item N do ultimo pacote (com trava de teto).
-async function adsAprovar(n) {
+async function adsAprovar(n, ativar) {
     const itens = adsLerItens();
     const item = itens.find(it => it.n === n);
     if (!item) return `Não achei o carro ${n} no último pacote. Abra /pacote-ads pra ver os números, ou /testar-pacote pra reenviar.`;
     const post = { instagramMediaId: item.postId, modelo: item.modelo, legenda: item.caption };
     try {
-        const r = await adsMeta.subirAnuncio({ dataDir: DATA_DIR, post });
+        const r = await adsMeta.subirAnuncio({ dataDir: DATA_DIR, post, ativar });
         if (!r.ok) return `❌ Não subi o *${item.modelo}*: ${r.motivo}.`;
         if (r.dryRun) {
             const p = r.plano.resumo;
             return `🧪 *Simulação — ${item.modelo}*\nSubiria um anúncio de R$ ${p.orcamentoDia}/dia por ${p.dias} dias (R$ ${p.gastoPrevisto}), público Belo Horizonte, objetivo visitas ao perfil.\nFalta só ligar o token do Meta pra valer — aí esse mesmo *SIM* sobe de verdade. Nada foi gasto.`;
         }
-        return `✅ *${item.modelo}* — anúncio criado *pausado* (R$ ${r.teto.orcamentoTotal}). Confira e ative no Gerenciador de Anúncios. Gasto comprometido no mês: R$ ${r.teto.totalMes} de R$ ${adsMeta.config().tetoMes}.`;
+        const estado = ativar
+            ? `*ativo* — em análise do Meta; começa a rodar sozinho após aprovação`
+            : `*pausado* — confira e ative no Gerenciador`;
+        return `✅ *${item.modelo}* — anúncio criado ${estado} (R$ ${r.teto.orcamentoTotal} por ${adsMeta.config().dias} dias). Gasto comprometido no mês: R$ ${r.teto.totalMes} de R$ ${adsMeta.config().tetoMes}.`;
     } catch (e) {
         registrarErro('Ads/Aprovar', e.message);
         return `❌ Deu erro ao subir o *${item.modelo}*: ${e.message}`;
@@ -1237,14 +1240,24 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Zera o comprometimento de gasto do mes (testes que criaram campanhas depois excluidas): /reset-gasto
+    if (req.url === '/reset-gasto') {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        adsMeta.resetarGasto(DATA_DIR);
+        res.end('Comprometimento de gasto zerado. Agora o teto do mes conta do zero.');
+        return;
+    }
+
     // Dispara um carro do ultimo pacote AGORA, direto (sem depender do "SIM" no Zap): /disparo-teste?n=1
-    // Usa a MESMA logica do "SIM N" (adsAprovar) — sobe o anuncio PAUSADO, com trava de teto.
+    // ?ativo=1 sobe o anuncio JA ATIVO (rodando); sem isso, sobe PAUSADO. Trava de teto sempre na frente.
     if (req.url.startsWith('/disparo-teste')) {
-        const n = Number(new URL(req.url, 'http://x').searchParams.get('n') || 1);
+        const params = new URL(req.url, 'http://x').searchParams;
+        const n = Number(params.get('n') || 1);
+        const ativar = params.get('ativo') === '1';
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         try {
             const item = adsLerItens().find(it => it.n === n);
-            const resposta = await adsAprovar(n);
+            const resposta = await adsAprovar(n, ativar);
             res.end(`carro ${n}: ${item?.modelo}\npostId guardado: ${item?.postId}\n---\n${resposta}`);
         } catch (err) {
             res.end('Falhou no disparo: ' + err.message);

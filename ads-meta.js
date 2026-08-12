@@ -66,6 +66,11 @@ function registrarGasto(dataDir, valor) {
     try { fs.writeFileSync(_arqGasto(dataDir), JSON.stringify(g, null, 2)); } catch (e) {}
     return g[_mesAtual()];
 }
+// Zera o comprometimento do mes (util quando testes criaram campanhas que foram excluidas).
+function resetarGasto(dataDir) {
+    try { fs.writeFileSync(_arqGasto(dataDir), JSON.stringify({}, null, 2)); } catch (e) {}
+    return 0;
+}
 
 // Retorna { ok, motivo, orcamentoTotal, jaGastoMes, sobraMes } — a decisao da trava.
 function checarTeto(dataDir, cfg, orcamentoDia, dias) {
@@ -133,13 +138,15 @@ async function _post(nodePath, cfg, body) {
 //  Com token: cria campanha -> adset -> creative -> ad (pausado) e registra o gasto.
 //  Retorna sempre um objeto com { ok, dryRun, plano, ids?, teto }.
 // ---------------------------------------------------------------------------
-async function subirAnuncio({ dataDir, post, orcamentoDia, dias }) {
+async function subirAnuncio({ dataDir, post, orcamentoDia, dias, ativar }) {
     const cfg = config();
     orcamentoDia = orcamentoDia || cfg.tetoDia;
     dias = dias || cfg.dias;
+    const st = ativar ? 'ACTIVE' : 'PAUSED';   // ativar=true sobe rodando (o Meta ainda analisa antes de gastar)
 
     const teto = checarTeto(dataDir, cfg, orcamentoDia, dias);
     const plano = montarPlano(cfg, post, orcamentoDia, dias);
+    plano.campanha.status = st;
     if (!teto.ok) return { ok: false, dryRun: cfg.dryRun, motivo: teto.motivo, plano, teto };
 
     if (cfg.dryRun) return { ok: true, dryRun: true, motivo: 'simulacao (sem token) — nada gasto', plano, teto };
@@ -149,7 +156,7 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias }) {
     const camp = await _post(`${acct}/campaigns`, cfg, plano.campanha);
     const endTime = new Date(Date.now() + dias * 864e5).toISOString();
     const adset = await _post(`${acct}/adsets`, cfg, {
-        ...plano.adset, campaign_id: camp.id, end_time: endTime, status: 'PAUSED',
+        ...plano.adset, campaign_id: camp.id, end_time: endTime, status: st,
         targeting: plano.adset.targeting,
     });
     const creative = await _post(`${acct}/adcreatives`, cfg, {
@@ -159,7 +166,7 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias }) {
     });
     const ad = await _post(`${acct}/ads`, cfg, {
         name: `Repasse | ${post.modelo}`, adset_id: adset.id,
-        creative: { creative_id: creative.id }, status: 'PAUSED',
+        creative: { creative_id: creative.id }, status: st,
     });
 
     const totalMes = registrarGasto(dataDir, teto.orcamentoTotal);
@@ -167,4 +174,4 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias }) {
              ids: { campanha: camp.id, adset: adset.id, criativo: creative.id, anuncio: ad.id }, teto: { ...teto, totalMes } };
 }
 
-module.exports = { config, checarTeto, gastoDoMes, registrarGasto, montarPlano, subirAnuncio };
+module.exports = { config, checarTeto, gastoDoMes, registrarGasto, resetarGasto, montarPlano, subirAnuncio };
