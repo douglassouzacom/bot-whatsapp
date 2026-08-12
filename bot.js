@@ -761,6 +761,25 @@ function registrarVendaAds(stanzaId) {
         salvarHistoricoAds();
     } catch (e) { console.error('registrarVendaAds:', e.message); }
 }
+// Marca no historico que o carro (pelo postId do IG) foi IMPULSIONADO — pra medir se anuncio acelera venda.
+function registrarImpulsionadoAds(postId) {
+    try {
+        if (!postId) return;
+        let stanzaId = null;
+        for (const [sid, d] of instagramPosts) { if (d && d.postId === postId) { stanzaId = sid; break; } }
+        if (!stanzaId) return;
+        const reg = [...historicoAds].reverse().find(r => r.stanzaId === stanzaId);
+        if (reg && !reg.impulsionadoEm) { reg.impulsionadoEm = new Date().toISOString(); salvarHistoricoAds(); }
+    } catch (e) { console.error('registrarImpulsionadoAds:', e.message); }
+}
+// Compara tempo medio de venda: carros IMPULSIONADOS vs NAO impulsionados (o ROI real do anuncio).
+function adsRoiImpulsionamento() {
+    const vendidos = historicoAds.filter(r => r.vendidoEm && typeof r.diasAteVenda === 'number');
+    const media = arr => arr.length ? Math.round(arr.reduce((s, r) => s + r.diasAteVenda, 0) / arr.length * 10) / 10 : null;
+    const imp = vendidos.filter(r => r.impulsionadoEm);
+    const nao = vendidos.filter(r => !r.impulsionadoEm);
+    return { impulsionados: { n: imp.length, mediaDias: media(imp) }, naoImpulsionados: { n: nao.length, mediaDias: media(nao) } };
+}
 // Agrega o historico em placar por faixa e por modelo (so vendas confirmadas).
 function adsAprendizado() {
     const vendidos = historicoAds.filter(r => r.vendidoEm && typeof r.diasAteVenda === 'number');
@@ -883,6 +902,7 @@ async function adsAprovar(n, ativar) {
             const p = r.plano.resumo;
             return `🧪 *Simulação — ${item.modelo}*\nSubiria um anúncio de R$ ${p.orcamentoDia}/dia por ${p.dias} dias (R$ ${p.gastoPrevisto}), público Belo Horizonte, objetivo visitas ao perfil.\nFalta só ligar o token do Meta pra valer — aí esse mesmo *SIM* sobe de verdade. Nada foi gasto.`;
         }
+        registrarImpulsionadoAds(item.postId);   // marca pro aprendizado de ROI (anuncio acelera venda?)
         const estado = ativar
             ? `*ativo* — em análise do Meta; começa a rodar sozinho após aprovação`
             : `*pausado* — confira e ative no Gerenciador`;
@@ -1238,6 +1258,16 @@ http.createServer(async (req, res) => {
         txt += `\n\nPor modelo (mais rápido primeiro):\n`;
         txt += (ordena(ap.porModelo).map(([k, g]) => linha(k, g)).join('\n') || '  —');
         txt += `\n\nCarros postados aguardando venda: ${aguardando}`;
+        const roi = adsRoiImpulsionamento();
+        if (roi.impulsionados.n > 0 || roi.naoImpulsionados.n > 0) {
+            txt += `\n\n💰 Anúncio acelera a venda?\n`;
+            txt += `  Impulsionados: ${roi.impulsionados.n} venda(s)` + (roi.impulsionados.mediaDias != null ? `, média ${roi.impulsionados.mediaDias} dia(s)` : '') + `\n`;
+            txt += `  Sem impulsionar: ${roi.naoImpulsionados.n} venda(s)` + (roi.naoImpulsionados.mediaDias != null ? `, média ${roi.naoImpulsionados.mediaDias} dia(s)` : '') + `\n`;
+            if (roi.impulsionados.mediaDias != null && roi.naoImpulsionados.mediaDias != null) {
+                const dif = Math.round((roi.naoImpulsionados.mediaDias - roi.impulsionados.mediaDias) * 10) / 10;
+                txt += dif > 0 ? `  → impulsionados vendem ~${dif} dia(s) mais rápido.` : `  → sem diferença clara ainda (precisa de mais vendas).`;
+            }
+        }
         res.end(txt);
         return;
     }
