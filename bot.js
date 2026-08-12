@@ -892,6 +892,19 @@ async function adsAprovar(n, ativar) {
         return `❌ Deu erro ao subir o *${item.modelo}*: ${e.message}`;
     }
 }
+// Monta a mensagem de resultado dos anuncios pro Zap.
+function adsTextoResultado(campanhas) {
+    let txt = `📊 *RESULTADO DOS ANÚNCIOS* (últimos 30 dias)\n`;
+    for (const c of campanhas) {
+        const modelo = (c.nome || 'Anúncio').replace(/^Repasse \| /, '').replace(/ \| \d{4}-\d{2}$/, '');
+        txt += `\n*${modelo}*\n`;
+        txt += `• Alcance: ${c.alcance.toLocaleString('pt-BR')} pessoas\n`;
+        txt += `• Cliques/visitas ao perfil: ${c.cliques}\n`;
+        if (c.custoPorClique != null) txt += `• Custo por clique: R$ ${c.custoPorClique.toFixed(2)}\n`;
+        txt += `• Gasto até agora: R$ ${c.gasto.toFixed(2)}\n`;
+    }
+    return txt;
+}
 // Verifica se um JID e do Douglas (WHATSAPP_ALERTA), ignorando o nono digito.
 function ehDoDouglas(jid) {
     if (!jid || jid.endsWith('@g.us')) return false;                 // grupo, nao
@@ -919,6 +932,21 @@ setInterval(() => {
     try { fs.writeFileSync(ARQ_ULTIMO_ADS, hoje); } catch {}
     adsEnviarPacote();
 }, 30 * 60 * 1000);
+
+// Monitor de resultado dos anuncios: 1x/dia avisa no Zap como estao rendendo (dedup por dia).
+// So avisa quando ha campanha com entrega nos ultimos 7 dias — quando nao ha, fica quieto.
+const ARQ_ULTIMO_RESULTADO = path.join(DATA_DIR, 'ultimo_resultado_ads.txt');
+setInterval(async () => {
+    const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    try { if (fs.existsSync(ARQ_ULTIMO_RESULTADO) && fs.readFileSync(ARQ_ULTIMO_RESULTADO, 'utf8').trim() === hoje) return; } catch {}
+    try {
+        const r = await adsMeta.resultadoCampanhas();
+        if (r.dryRun || !r.campanhas.length) return;   // sem token ou sem entrega ainda: nao avisa
+        await enviarAlerta(adsTextoResultado(r.campanhas));
+        try { fs.writeFileSync(ARQ_ULTIMO_RESULTADO, hoje); } catch {}
+        registrarSucesso('Ads', 'Resultado dos anuncios avisado no WhatsApp');
+    } catch (e) { registrarErro('Ads/Resultado', e.message); }
+}, 6 * 60 * 60 * 1000);   // checa a cada 6h; avisa no maximo 1x/dia
 
 // Último post do Instagram (para /vendido-teste) — restaurado do disco se disponível
 let ultimoPostInstagram = restaurarUltimoPost();
@@ -1237,6 +1265,22 @@ http.createServer(async (req, res) => {
         } catch (err) {
             res.end('Falhou ao enviar: ' + err.message);
         }
+        return;
+    }
+
+    // Resultado dos anuncios (alcance, cliques/visitas, gasto): /resultado-ads  (?avisar=1 tambem manda no Zap)
+    if (req.url.startsWith('/resultado-ads')) {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        try {
+            const r = await adsMeta.resultadoCampanhas();
+            if (r.dryRun) { res.end('Modo simulação (sem token) — sem resultado real.'); return; }
+            if (!r.campanhas.length) { res.end('Nenhum anúncio com entrega ainda. O Meta analisa e começa a rodar em algumas horas — o resultado aparece depois que a campanha rodar.'); return; }
+            const txt = adsTextoResultado(r.campanhas);
+            if (new URL(req.url, 'http://x').searchParams.get('avisar') === '1') {
+                try { await enviarAlerta(txt); } catch (e) { registrarErro('Ads/Resultado', e.message); }
+            }
+            res.end(txt);
+        } catch (err) { res.end('Erro ao puxar resultado: ' + err.message); }
         return;
     }
 

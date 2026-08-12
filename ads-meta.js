@@ -132,6 +132,39 @@ async function _post(nodePath, cfg, body) {
     return json;
 }
 
+// GET na Graph API (so quando NAO e dry-run).
+async function _get(nodePath, cfg) {
+    const sep = nodePath.includes('?') ? '&' : '?';
+    const res = await fetch(`${GRAPH}/${nodePath}${sep}access_token=${encodeURIComponent(cfg.token)}`, { signal: AbortSignal.timeout(30000) });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) throw new Error(json.error?.message || `HTTP ${res.status} em ${nodePath}`);
+    return json;
+}
+
+// Resultado das campanhas de anuncio (nivel campanha, ultimos 30 dias) — so as que tiveram entrega.
+// Retorna { dryRun, campanhas:[{ nome, alcance, impressoes, gasto, cliques, custoPorClique }] }.
+async function resultadoCampanhas() {
+    const cfg = config();
+    if (cfg.dryRun) return { dryRun: true, campanhas: [] };
+    const acct = `act_${cfg.adAccount}`;
+    const fields = 'campaign_name,reach,impressions,spend,actions,cost_per_action_type';
+    const json = await _get(`${acct}/insights?level=campaign&date_preset=last_7d&fields=${fields}&limit=50`, cfg);
+    const ehClique = a => /link_click|profile_visit|instagram_profile/i.test(a.action_type || '');
+    const campanhas = (json.data || []).map(c => {
+        const cl = (c.actions || []).find(ehClique);
+        const cpc = (c.cost_per_action_type || []).find(ehClique);
+        return {
+            nome: c.campaign_name,
+            alcance: Number(c.reach || 0),
+            impressoes: Number(c.impressions || 0),
+            gasto: Number(c.spend || 0),
+            cliques: cl ? Number(cl.value) : 0,
+            custoPorClique: cpc ? Number(cpc.value) : null,
+        };
+    }).filter(c => c.impressoes > 0);
+    return { dryRun: false, campanhas };
+}
+
 // ---------------------------------------------------------------------------
 //  SUBIR O ANUNCIO  — orquestra tudo, com a trava de teto na frente.
 //  Em dry-run: retorna { dryRun:true, plano } sem tocar na API nem no gasto.
@@ -174,4 +207,4 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias, ativar }) {
              ids: { campanha: camp.id, adset: adset.id, criativo: creative.id, anuncio: ad.id }, teto: { ...teto, totalMes } };
 }
 
-module.exports = { config, checarTeto, gastoDoMes, registrarGasto, resetarGasto, montarPlano, subirAnuncio };
+module.exports = { config, checarTeto, gastoDoMes, registrarGasto, resetarGasto, montarPlano, subirAnuncio, resultadoCampanhas };
