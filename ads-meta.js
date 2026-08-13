@@ -160,6 +160,7 @@ async function resultadoCampanhas() {
             gasto: Number(c.spend || 0),
             cliques: cl ? Number(cl.value) : 0,
             custoPorClique: cpc ? Number(cpc.value) : null,
+            acoes: (c.actions || []).map(a => `${a.action_type}=${a.value}`),  // cruas, pra diagnostico
         };
     }).filter(c => c.impressoes > 0);
     return { dryRun: false, campanhas };

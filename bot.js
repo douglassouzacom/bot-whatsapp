@@ -1364,8 +1364,13 @@ http.createServer(async (req, res) => {
             const r = await adsMeta.resultadoCampanhas();
             if (r.dryRun) { res.end('Modo simulação (sem token) — sem resultado real.'); return; }
             if (!r.campanhas.length) { res.end('Nenhum anúncio com entrega ainda. O Meta analisa e começa a rodar em algumas horas — o resultado aparece depois que a campanha rodar.'); return; }
-            const txt = adsTextoResultado(r.campanhas);
-            if (new URL(req.url, 'http://x').searchParams.get('avisar') === '1') {
+            const params = new URL(req.url, 'http://x').searchParams;
+            let txt = adsTextoResultado(r.campanhas);
+            if (params.get('raw') === '1') {
+                txt += `\n\n--- ações cruas (diagnóstico) ---`;
+                for (const c of r.campanhas) txt += `\n${c.nome}: ${c.acoes.join(', ') || '(nenhuma ação registrada)'}`;
+            }
+            if (params.get('avisar') === '1') {
                 try { await enviarAlerta(txt); } catch (e) { registrarErro('Ads/Resultado', e.message); }
             }
             res.end(txt);
