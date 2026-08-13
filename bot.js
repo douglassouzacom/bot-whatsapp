@@ -1329,6 +1329,23 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Status de cada anuncio (em analise / veiculando / rejeitado + motivo): /status-ads
+    if (req.url === '/status-ads') {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        try {
+            const r = await adsMeta.statusAnuncios();
+            if (r.dryRun) { res.end('Modo simulação (sem token).'); return; }
+            if (!r.anuncios.length) { res.end('Nenhum anúncio na conta.'); return; }
+            let txt = 'STATUS DOS ANÚNCIOS:\n';
+            for (const a of r.anuncios) {
+                txt += `\n• ${a.nome}: ${a.status}`;
+                if (a.motivo) txt += `\n  motivo: ${a.motivo}`;
+            }
+            res.end(txt);
+        } catch (err) { res.end('Erro: ' + err.message); }
+        return;
+    }
+
     // Resumo da semana (postados, vendidos, tempo medio): /relatorio  (?avisar=1 tambem manda no Zap)
     if (req.url.startsWith('/relatorio')) {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });

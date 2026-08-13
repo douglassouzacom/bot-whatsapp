@@ -165,6 +165,25 @@ async function resultadoCampanhas() {
     return { dryRun: false, campanhas };
 }
 
+// Status de cada anuncio (em analise / ativo / rejeitado) + motivo se recusado.
+async function statusAnuncios() {
+    const cfg = config();
+    if (cfg.dryRun) return { dryRun: true, anuncios: [] };
+    const acct = `act_${cfg.adAccount}`;
+    const json = await _get(`${acct}/ads?fields=name,effective_status,ad_review_feedback&limit=50`, cfg);
+    const traduz = s => ({
+        ACTIVE: 'veiculando ✅', PENDING_REVIEW: 'em análise ⏳', IN_PROCESS: 'em análise ⏳',
+        PENDING_BILLING_INFO: 'falta dado de pagamento ⚠️', DISAPPROVED: 'REJEITADO ❌',
+        PAUSED: 'pausado', ADSET_PAUSED: 'conjunto pausado', CAMPAIGN_PAUSED: 'campanha pausada',
+        WITH_ISSUES: 'com problema ⚠️', PREAPPROVED: 'pré-aprovado',
+    }[s] || s);
+    const anuncios = (json.data || []).map(a => ({
+        nome: a.name, status: traduz(a.effective_status), bruto: a.effective_status,
+        motivo: a.ad_review_feedback ? JSON.stringify(a.ad_review_feedback) : null,
+    }));
+    return { dryRun: false, anuncios };
+}
+
 // ---------------------------------------------------------------------------
 //  SUBIR O ANUNCIO  — orquestra tudo, com a trava de teto na frente.
 //  Em dry-run: retorna { dryRun:true, plano } sem tocar na API nem no gasto.
@@ -207,4 +226,4 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias, ativar }) {
              ids: { campanha: camp.id, adset: adset.id, criativo: creative.id, anuncio: ad.id }, teto: { ...teto, totalMes } };
 }
 
-module.exports = { config, checarTeto, gastoDoMes, registrarGasto, resetarGasto, montarPlano, subirAnuncio, resultadoCampanhas };
+module.exports = { config, checarTeto, gastoDoMes, registrarGasto, resetarGasto, montarPlano, subirAnuncio, resultadoCampanhas, statusAnuncios };
