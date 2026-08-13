@@ -166,6 +166,20 @@ async function resultadoCampanhas() {
     return { dryRun: false, campanhas };
 }
 
+// Pausa TODAS as campanhas ativas/em analise da conta (para o gasto na hora).
+async function pausarTudo() {
+    const cfg = config();
+    if (cfg.dryRun) return 'Modo simulação (sem token) — nada a pausar.';
+    const acct = `act_${cfg.adAccount}`;
+    const json = await _get(`${acct}/campaigns?fields=id,name,effective_status&limit=50`, cfg);
+    const ativas = (json.data || []).filter(c => /ACTIVE|PENDING|IN_PROCESS|WITH_ISSUES|PREAPPROVED/i.test(c.effective_status || ''));
+    let n = 0;
+    for (const c of ativas) {
+        try { await _post(c.id, cfg, { status: 'PAUSED' }); n++; } catch (e) { /* segue */ }
+    }
+    return n ? `⏸️ Pausei ${n} campanha(s). Não gasta mais.` : 'Nenhuma campanha ativa pra pausar.';
+}
+
 // Status de cada anuncio (em analise / ativo / rejeitado) + motivo se recusado.
 async function statusAnuncios() {
     const cfg = config();
@@ -227,4 +241,4 @@ async function subirAnuncio({ dataDir, post, orcamentoDia, dias, ativar }) {
              ids: { campanha: camp.id, adset: adset.id, criativo: creative.id, anuncio: ad.id }, teto: { ...teto, totalMes } };
 }
 
-module.exports = { config, checarTeto, gastoDoMes, registrarGasto, resetarGasto, montarPlano, subirAnuncio, resultadoCampanhas, statusAnuncios };
+module.exports = { config, checarTeto, gastoDoMes, registrarGasto, resetarGasto, montarPlano, subirAnuncio, resultadoCampanhas, statusAnuncios, pausarTudo };

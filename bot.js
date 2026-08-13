@@ -1329,6 +1329,14 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Pausa TODAS as campanhas ativas (para o gasto na hora): /pausar-ads
+    if (req.url === '/pausar-ads') {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        try { res.end(await adsMeta.pausarTudo()); }
+        catch (err) { res.end('Erro ao pausar: ' + err.message); }
+        return;
+    }
+
     // Status de cada anuncio (em analise / veiculando / rejeitado + motivo): /status-ads
     if (req.url === '/status-ads') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
