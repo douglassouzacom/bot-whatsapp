@@ -1575,29 +1575,29 @@ const HORA_AVISO          = _envInt(process.env.HORA_AVISO, 9);   // 9 UTC = 06:
 const MINUTO_AVISO        = _envInt(process.env.MINUTO_AVISO, 30);
 // =============================================
 
-const TEXTO_AVISO = `‼️ *INFORMAÇÕES IMPORTANTES* ‼️
+const TEXTO_AVISO = `🚨 *REPASSE — REGRAS DA CASA* 🚨
 
-➕ *AVISOS SOBRE O MERCADO DE REPASSE:*
+📍 Todos os carros estão em *Belo Horizonte/MG*.
 
-*O REPASSE NÃO TEM GARANTIA* de motor, caixa, itens elétricos ou qualquer outro item. Vendido no estado em que se encontra, podendo haver vícios aparentes ou ocultos. Por isso é comercializado abaixo da Fipe. 🚨
+*Sem garantia.* Motor, câmbio, elétrica: nada tem garantia. Vendido no estado em que se encontra, podendo ter vícios aparentes ou ocultos. Por isso o preço fica abaixo da Fipe.
 
-Veículos *DESTINADOS SOMENTE A LOJISTAS E INVESTIDORES.*
+*Somente lojistas e investidores.* Operação entre empresas.
 
-*💰 PAGAMENTO:* Somente via *PIX ou TED* na conta da empresa. Não faça pagamentos em contas de pessoas físicas ou terceiros. Em caso de dúvida, faça uma vídeo chamada comigo.
+*Pagamento:* PIX ou TED *somente na minha conta* — a mesma que eu confirmo com você na chamada de vídeo. Nenhuma outra conta, de ninguém.
 
-*🚚 FRETE:* Enviamos para todo o Brasil, frete por conta do comprador. Não nos responsabilizamos por danos no transporte.
+📹 *Todo carro fechado eu faço uma chamada de vídeo com você.* Se não teve chamada de vídeo comigo, não sou eu — é golpe.
 
-*🔍 VISTORIA CAUTELAR:* Sempre por conta do comprador. Recomendamos revisão do veículo após a compra.
+⚠️ *Não nos responsabilizamos por golpes.* Pagamento feito para qualquer outra conta que não a minha, confirmada na chamada de vídeo, é por conta e risco de quem pagou.
 
-*📦 PRAZO DE ENTREGA:* Em média 7 a 10 dias, podendo variar conforme localização.
+*Entrega:* em BH, 1 dia útil, podendo chegar a 2. Outros estados: prazo e frete confirmados com o parceiro de frete, por conta do comprador.
 
-*❌ NÃO ACEITAMOS:* Financiamento, consórcio, trocas. *Somente à vista.*
+*Vistoria cautelar:* R$ 250, por conta do comprador.
 
-*Douglas Souza*
-*Minas Brasil Repasse* 🚗
+*Não aceitamos* financiamento, consórcio ou troca. Só à vista.
 
-Fiquem atentos aos golpes! 🚨
-*Boas vendas e ótimos negócios* 🚀`;
+Viu algum carro? *Me chama no privado.*
+
+*Douglas Souza — Minas Brasil Repasse* 🚗`;
 
 function ajustarPrecos(texto) {
     return texto.replace(/(R\$\s?)?(\d{1,3}(?:[.,]\d{3})+)/g, (match, prefixo, valorStr) => {
