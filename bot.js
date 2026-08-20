@@ -1577,26 +1577,15 @@ const MINUTO_AVISO        = _envInt(process.env.MINUTO_AVISO, 30);
 
 const TEXTO_AVISO = `🚨 *REPASSE — REGRAS DA CASA* 🚨
 
-📍 Todos os carros estão em *Belo Horizonte/MG*.
-
-*Sem garantia.* Motor, câmbio, elétrica: nada tem garantia. Vendido no estado em que se encontra, podendo ter vícios aparentes ou ocultos. Por isso o preço fica abaixo da Fipe.
-
-*Somente lojistas e investidores.* Operação entre empresas.
-
-*Pagamento:* PIX ou TED *somente na minha conta* — a mesma que eu confirmo com você na chamada de vídeo. Nenhuma outra conta, de ninguém.
-
-📹 *Todo carro fechado eu faço uma chamada de vídeo com você.* Se não teve chamada de vídeo comigo, não sou eu — é golpe.
-
-⚠️ *Não nos responsabilizamos por golpes.* Pagamento feito para qualquer outra conta que não a minha, confirmada na chamada de vídeo, é por conta e risco de quem pagou.
-
-*Entrega:* em BH, 1 dia útil, podendo chegar a 2. Outros estados: prazo e frete confirmados com o parceiro de frete, por conta do comprador.
-
-*Vistoria cautelar:* R$ 250, por conta do comprador.
-
-*Não aceitamos* financiamento, consórcio ou troca. Só à vista.
+📍 Todos os carros em *BH/MG*.
+⚠️ *Sem garantia* — vendido no estado, com vícios aparentes ou ocultos. Por isso fica abaixo da Fipe.
+🏢 *Só lojistas e investidores.*
+💰 *Só à vista*, PIX ou TED *na minha conta*. Sem financiamento, consórcio ou troca.
+📹 *Todo carro fechado eu faço chamada de vídeo com você.* Sem chamada, não sou eu — é golpe. *Não nos responsabilizamos por golpes.*
+🚚 *Entrega:* BH em 1 a 2 dias úteis. Outros estados: com o parceiro de frete, por conta do comprador.
+🔍 *Cautelar:* R$ 250, por conta do comprador.
 
 Viu algum carro? *Me chama no privado.*
-
 *Douglas Souza — Minas Brasil Repasse* 🚗`;
 
 function ajustarPrecos(texto) {
