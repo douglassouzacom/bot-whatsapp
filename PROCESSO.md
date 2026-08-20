@@ -80,7 +80,7 @@ Quando o Ronei responde um carro escrevendo "vendido" (ou "reservado"):
 
 ## 7. Aviso matinal (todo dia 06:30 BRT)
 
-O bot manda automaticamente no GRUPO 8 o texto padrão de condições de venda (sem garantia, só PIX/TED, sem financiamento/consórcio/trocas, frete por conta do comprador, prazo 7–10 dias, assinado Douglas Souza / Minas Brasil Repasse).
+O bot manda automaticamente no GRUPO 8 o texto padrão de condições de venda: todos os carros estão em BH/MG, sem garantia, somente lojistas e investidores, pagamento só na conta do Douglas, chamada de vídeo obrigatória em todo carro fechado (é a proteção antigolpe — sem chamada, não é ele), não nos responsabilizamos por golpes, entrega em BH 1–2 dias úteis e outros estados via parceiro de frete, cautelar R$ 250 por conta do comprador, sem financiamento/consórcio/trocas, e fecho chamando pro privado. Texto em `bot.js` (const `TEXTO_AVISO`).
 
 Horário controlado por `HORA_AVISO` (9 UTC = 06:30 BRT) e `MINUTO_AVISO`.
 
