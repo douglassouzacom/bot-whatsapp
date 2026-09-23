@@ -1263,6 +1263,34 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Rota de teste do acrescimo: /testar-acrescimo — manda no WhatsApp o valor
+    // que o bot esta somando aos precos agora, pra confirmar sem precisar
+    // esperar um carro real passar pelo grupo.
+    if (req.url === '/testar-acrescimo') {
+        (async () => {
+            try {
+                if (!sockAtual || !sockAtual.user) {
+                    res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+                    res.end(JSON.stringify({ ok: false, erro: 'Bot sem conexão com o WhatsApp agora — tente de novo em instantes' }));
+                    return;
+                }
+                const exemplo = 'R$ 50.000';
+                const ajustado = ajustarPrecos(exemplo);
+                await enviarAlerta(
+                    `🧪 *Teste de acréscimo*\n\n` +
+                    `Valor aplicado agora: *+R$ ${ACRESCIMO.toLocaleString('pt-BR')}*\n\n` +
+                    `Exemplo: ${exemplo} → ${ajustado}`
+                );
+                res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(JSON.stringify({ ok: true, acrescimo: ACRESCIMO, exemplo, ajustado }, null, 2));
+            } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(JSON.stringify({ ok: false, erro: err.message }));
+            }
+        })();
+        return;
+    }
+
     // Rota de imagens: /img/:token ou /img/:token.jpg
     if (req.url && req.url.startsWith('/img/')) {
         const token = req.url.slice(5).replace(/\.jpg$/i, '');
