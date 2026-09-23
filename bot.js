@@ -649,6 +649,36 @@ async function enviarAlerta(texto) {
     return d;
 }
 
+let ultimoAlertaGrupo = 0;
+
+// Avisa o Douglas no WhatsApp quando um grupo essencial (origem/destino/aviso)
+// nao e encontrado pelo nome — ex: grupo renomeado, ou bot removido dele.
+// Sem isso a falha so aparecia no log do Render, que ninguem olha todo dia,
+// e o bot parava de reencaminhar/postar em silencio.
+async function alertarGrupoFaltando(faltando) {
+    const agora = Date.now();
+    if (agora - ultimoAlertaGrupo < ALERTA_COOLDOWN_MS) return; // ja alertou ha pouco
+    ultimoAlertaGrupo = agora;
+
+    try {
+        if (!sockAtual || !sockAtual.user) {
+            registrarErro('Grupos/Alerta', 'Sem socket ativo para enviar alerta');
+            return;
+        }
+        const texto =
+            `🚨 *ALERTA — grupo do WhatsApp não encontrado*\n\n` +
+            `O bot não achou: ${faltando.join(', ')}.\n\n` +
+            `Provável causa: o grupo foi renomeado, ou o número do bot saiu dele. ` +
+            `Enquanto isso o bot não reencaminha/posta.\n\n` +
+            `Confira o nome exato do grupo (variáveis GRUPO_ORIGEM_NOME / GRUPO_DESTINO_NOME / ` +
+            `GRUPO_AVISO_NOME) e se o número do bot ainda está no grupo.`;
+        await enviarAlerta(texto);
+        registrarSucesso('Grupos/Alerta', 'Falta de grupo avisada no WhatsApp');
+    } catch (err) {
+        registrarErro('Grupos/Alerta', `Não conseguiu avisar: ${err.message}`);
+    }
+}
+
 // Avisa o Douglas no WhatsApp quando o Instagram NAO confirma a publicacao.
 // Com cooldown para nao floodar quando varios carros falham em sequencia.
 async function alertarFalhaInstagram(legenda) {
@@ -1730,9 +1760,11 @@ async function iniciarBot() {
                 if (nome.includes(GRUPO_DESTINO_NOME.toLowerCase())) { grupoDestinoId = id; registrarSucesso('Grupos', 'Destino: ' + info.subject); }
                 if (nome.includes(GRUPO_AVISO_NOME.toLowerCase()))   { grupoAvisoId   = id; registrarSucesso('Grupos', 'Aviso:   ' + info.subject); }
             }
-            if (!grupoOrigemId)  registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);
-            if (!grupoDestinoId) registrarErro('Grupos', 'DESTINO não encontrado: ' + GRUPO_DESTINO_NOME);
-            if (!grupoAvisoId)   registrarErro('Grupos', 'AVISO não encontrado: '   + GRUPO_AVISO_NOME);
+            const grupoFaltando = [];
+            if (!grupoOrigemId)  { registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);  grupoFaltando.push(`ORIGEM (${GRUPO_ORIGEM_NOME})`); }
+            if (!grupoDestinoId) { registrarErro('Grupos', 'DESTINO não encontrado: ' + GRUPO_DESTINO_NOME); grupoFaltando.push(`DESTINO (${GRUPO_DESTINO_NOME})`); }
+            if (!grupoAvisoId)   { registrarErro('Grupos', 'AVISO não encontrado: '   + GRUPO_AVISO_NOME);   grupoFaltando.push(`AVISO (${GRUPO_AVISO_NOME})`); }
+            if (grupoFaltando.length) alertarGrupoFaltando(grupoFaltando);
 
             if (grupoOrigemId && grupoDestinoId) {
                 _cachedGrupos = { origemId: grupoOrigemId, destinoId: grupoDestinoId, avisoId: grupoAvisoId };
