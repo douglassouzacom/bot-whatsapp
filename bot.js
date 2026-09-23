@@ -1600,7 +1600,7 @@ const _envInt = (v, def) => { const n = parseInt(v, 10); return Number.isNaN(n) 
 const GRUPO_ORIGEM_NOME   = process.env.GRUPO_ORIGEM_NOME  || 'Ronei repasse';
 const GRUPO_DESTINO_NOME  = process.env.GRUPO_DESTINO_NOME || 'MINAS BRASIL REPASSE GRUPO 8';
 const GRUPO_AVISO_NOME    = process.env.GRUPO_AVISO_NOME   || 'MINAS BRASIL REPASSE GRUPO 8';
-const ACRESCIMO           = _envInt(process.env.ACRESCIMO, 1000);
+const ACRESCIMO           = _envInt(process.env.ACRESCIMO, 2000);
 const HORA_AVISO          = _envInt(process.env.HORA_AVISO, 9);   // 9 UTC = 06:30 BRT
 const MINUTO_AVISO        = _envInt(process.env.MINUTO_AVISO, 30);
 // =============================================
