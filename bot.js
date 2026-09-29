@@ -13,6 +13,7 @@ const http = require('http');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 const adsMeta = require('./ads-meta');   // motor de disparo de anuncios (Marketing API)
 
 // =============================================
@@ -514,7 +515,6 @@ function isAnuncioAbaixouPreco(texto) {
 // tipo: 'image' | 'video'
 async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', tentativa = 1) {
     try {
-        const axios = require('axios');
         const { url } = gerarUrlImagem(buffer);
         const payload = tipo === 'video'
             ? { action: 'post_video', caption: legenda, videoUrl: url, stanzaId }
@@ -589,7 +589,6 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
 // Marca post do Instagram como VENDIDO (adiciona comentário ou atualiza legenda)
 async function marcarVendidoNoInstagram(stanzaIdCitado) {
     try {
-        const axios = require('axios');
         const dado = instagramPosts.get(stanzaIdCitado);
 
         if (!dado || !dado.postId) {
@@ -1115,8 +1114,9 @@ let ultimoQR = null;
 
 // Servidor web — painel + QR Code + serviço de imagens
 http.createServer(async (req, res) => {
+    const reqPath = req.url ? req.url.split('?')[0] : '/';
     // Rota QR dedicada: /qr
-    if (req.url === '/qr') {
+    if (reqPath === '/qr') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         if (ultimoQR) {
             const qrDataUrl = await QRCode.toDataURL(ultimoQR);
@@ -1141,7 +1141,7 @@ http.createServer(async (req, res) => {
     }
 
     // Rota reset de sessão: /reset-sessao
-    if (req.url === '/reset-sessao') {
+    if (reqPath === '/reset-sessao') {
         try {
             const sessaoDir = path.join(DATA_DIR, 'sessao');
             if (fs.existsSync(sessaoDir)) {
@@ -1170,10 +1170,9 @@ http.createServer(async (req, res) => {
     }
 
     // Rota de teste VENDIDO: /vendido-teste
-    if (req.url === '/vendido-teste') {
+    if (reqPath === '/vendido-teste') {
         if (ultimoPostInstagram) {
             try {
-                const axios = require('axios');
                 await axios.post(MAKE_WEBHOOK, {
                     action: 'vendido',
                     postId: ultimoPostInstagram.postId,
@@ -1204,7 +1203,7 @@ http.createServer(async (req, res) => {
 
     // Rota de callback do Make.com com o postId do Instagram
     // Make.com envia: POST /webhook-instagram-id  { stanzaId, postId }
-    if (req.method === 'POST' && req.url === '/webhook-instagram-id') {
+    if (req.method === 'POST' && reqPath === '/webhook-instagram-id') {
         let body = '';
         req.on('data', chunk => { body += chunk; });
         req.on('end', () => {
@@ -1234,7 +1233,7 @@ http.createServer(async (req, res) => {
 
     // Rota de teste do alarme: /testar-alerta — dispara um aviso na hora e mostra
     // pra qual numero ele foi, pra confirmar que o alarme aponta pro WhatsApp certo.
-    if (req.url === '/testar-alerta') {
+    if (reqPath === '/testar-alerta') {
         (async () => {
             try {
                 if (!sockAtual || !sockAtual.user) {
@@ -1266,7 +1265,7 @@ http.createServer(async (req, res) => {
     // Rota de teste do acrescimo: /testar-acrescimo — manda no WhatsApp o valor
     // que o bot esta somando aos precos agora, pra confirmar sem precisar
     // esperar um carro real passar pelo grupo.
-    if (req.url === '/testar-acrescimo') {
+    if (reqPath === '/testar-acrescimo') {
         (async () => {
             try {
                 if (!sockAtual || !sockAtual.user) {
@@ -1292,8 +1291,8 @@ http.createServer(async (req, res) => {
     }
 
     // Rota de imagens: /img/:token ou /img/:token.jpg
-    if (req.url && req.url.startsWith('/img/')) {
-        const token = req.url.slice(5).replace(/\.jpg$/i, '');
+    if (reqPath.startsWith('/img/')) {
+        const token = reqPath.slice(5).replace(/\.jpg$/i, '');
         const dado = imagensCache.get(token);
         if (dado) {
             res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' });
@@ -1307,7 +1306,7 @@ http.createServer(async (req, res) => {
 
     // Carros recentes (fonte do agente Impulsionador) — só leitura, sem nada sensível.
     // Retorna as legendas dos carros ja postados, mais recentes primeiro.
-    if (req.url === '/carros') {
+    if (reqPath === '/carros') {
         const carros = [...instagramPosts.values()]
             .filter(d => d && d.caption)
             .sort((a, b) => new Date(b.hora || 0) - new Date(a.hora || 0))
@@ -1318,7 +1317,7 @@ http.createServer(async (req, res) => {
     }
 
     // Pacote de ads da semana (ver/testar na hora): /pacote-ads
-    if (req.url === '/pacote-ads') {
+    if (reqPath === '/pacote-ads') {
         const texto = adsMontarTexto();
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end(texto || 'Nenhum carro com preço válido na janela ainda.');
@@ -1326,7 +1325,7 @@ http.createServer(async (req, res) => {
     }
 
     // Placar do aprendizado (o que o agente aprendeu com as vendas): /aprendizado
-    if (req.url === '/aprendizado') {
+    if (reqPath === '/aprendizado') {
         const ap = adsAprendizado();
         const totalRegistrados = historicoAds.length;
         const aguardando = historicoAds.filter(r => !r.vendidoEm).length;
@@ -1362,7 +1361,7 @@ http.createServer(async (req, res) => {
     }
 
     // Dispara o pacote de ads AGORA no WhatsApp (sem esperar segunda): /testar-pacote
-    if (req.url === '/testar-pacote') {
+    if (reqPath === '/testar-pacote') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         const texto = adsMontarTexto();
         if (!texto) {
@@ -1388,7 +1387,7 @@ http.createServer(async (req, res) => {
     }
 
     // Pausa TODAS as campanhas ativas (para o gasto na hora): /pausar-ads
-    if (req.url === '/pausar-ads') {
+    if (reqPath === '/pausar-ads') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         try { res.end(await adsMeta.pausarTudo()); }
         catch (err) { res.end('Erro ao pausar: ' + err.message); }
@@ -1396,7 +1395,7 @@ http.createServer(async (req, res) => {
     }
 
     // Status de cada anuncio (em analise / veiculando / rejeitado + motivo): /status-ads
-    if (req.url === '/status-ads') {
+    if (reqPath === '/status-ads') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         try {
             const r = await adsMeta.statusAnuncios();
@@ -1413,7 +1412,7 @@ http.createServer(async (req, res) => {
     }
 
     // Resumo da semana (postados, vendidos, tempo medio): /relatorio  (?avisar=1 tambem manda no Zap)
-    if (req.url.startsWith('/relatorio')) {
+    if (reqPath.startsWith('/relatorio')) {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         const txt = adsTextoRelatorio();
         if (new URL(req.url, 'http://x').searchParams.get('avisar') === '1') {
@@ -1424,7 +1423,7 @@ http.createServer(async (req, res) => {
     }
 
     // Resultado dos anuncios (alcance, cliques/visitas, gasto): /resultado-ads  (?avisar=1 tambem manda no Zap)
-    if (req.url.startsWith('/resultado-ads')) {
+    if (reqPath.startsWith('/resultado-ads')) {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         try {
             const r = await adsMeta.resultadoCampanhas();
@@ -1445,7 +1444,7 @@ http.createServer(async (req, res) => {
     }
 
     // Zera o comprometimento de gasto do mes (testes que criaram campanhas depois excluidas): /reset-gasto
-    if (req.url === '/reset-gasto') {
+    if (reqPath === '/reset-gasto') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         adsMeta.resetarGasto(DATA_DIR);
         res.end('Comprometimento de gasto zerado. Agora o teto do mes conta do zero.');
@@ -1454,7 +1453,7 @@ http.createServer(async (req, res) => {
 
     // Dispara um carro do ultimo pacote AGORA, direto (sem depender do "SIM" no Zap): /disparo-teste?n=1
     // ?ativo=1 sobe o anuncio JA ATIVO (rodando); sem isso, sobe PAUSADO. Trava de teto sempre na frente.
-    if (req.url.startsWith('/disparo-teste')) {
+    if (reqPath.startsWith('/disparo-teste')) {
         const params = new URL(req.url, 'http://x').searchParams;
         const n = Number(params.get('n') || 1);
         const ativar = params.get('ativo') === '1';
@@ -1470,7 +1469,7 @@ http.createServer(async (req, res) => {
     }
 
     // Politica de privacidade do app (URL exigida pra publicar o app no Meta): /privacidade
-    if (req.url === '/privacidade' || req.url === '/privacy') {
+    if (reqPath === '/privacidade' || reqPath === '/privacy') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1494,7 +1493,7 @@ http.createServer(async (req, res) => {
     }
 
     // Health check: /health — retorna JSON para monitoramento externo e keep-alive
-    if (req.url === '/health') {
+    if (reqPath === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             status: stats.status,
@@ -1510,7 +1509,7 @@ http.createServer(async (req, res) => {
     }
 
     // Diagnóstico de disco: /disco — mostra o que ocupa espaço em DATA_DIR (só leitura)
-    if (req.url === '/disco') {
+    if (reqPath === '/disco') {
         const itens = [];
         try {
             for (const nome of fs.readdirSync(DATA_DIR)) {
@@ -1554,7 +1553,7 @@ http.createServer(async (req, res) => {
 
     // Sessão do WhatsApp: /sessao-info — composição dos arquivos e limpeza de pre-keys.
     // Limpeza só roda com ?limpar=prekeys&confirmar=sim (evita acionamento acidental).
-    if (req.url && req.url.startsWith('/sessao-info')) {
+    if (reqPath.startsWith('/sessao-info')) {
         const u = new URL(req.url, 'http://x');
         const sessaoDir = path.join(DATA_DIR, 'sessao');
         const out = { sessaoDir, existe: fs.existsSync(sessaoDir) };
