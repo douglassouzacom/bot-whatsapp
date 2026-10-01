@@ -1769,6 +1769,13 @@ async function iniciarBot() {
                     registrarErro('Conexão', `Desconectado (cód ${codigoSaida}). Reconectando (tentativa ${stats.reconexoes}, ${falhasConsecutivas}ª seguida em ${espera / 1000}s)...`);
                     setTimeout(iniciarBot, espera);
                 }
+            } else {
+                // loggedOut: sessão revogada pelo WhatsApp (aparelho removido, sessão expirada).
+                // Limpa os arquivos de sessão e gera novo QR automaticamente — sem isso o bot
+                // ficaria morto até alguém visitar /reset-sessao manualmente.
+                registrarErro('Conexão', 'Deslogado pelo WhatsApp (loggedOut) — limpando sessão e gerando novo QR em /qr');
+                falhasConsecutivas = 0;
+                apagarSessaoEReiniciar();
             }
         }
     });
@@ -1801,7 +1808,10 @@ async function iniciarBot() {
             if (grupoAvisoId) agendarAvisoMatinal(sock, grupoAvisoId);
         } catch (err) {
             registrarErro('buscarGrupos', err.message);
-            if (minhaGeracao === geracaoBot) setTimeout(buscarGrupos, 10000);
+            // Só retenta se ainda estamos na mesma geração E conectados.
+            // Sem a segunda condição, o retry dispararia contra um socket já fechado
+            // (durante uma reconexão), gerando erros desnecessários nos logs.
+            if (minhaGeracao === geracaoBot && stats.status === 'conectado') setTimeout(buscarGrupos, 10000);
         }
     }
 
