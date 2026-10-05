@@ -1611,7 +1611,6 @@ setInterval(async () => {
     const url = _BASE_URL_EXTERNA;
     if (!url) return;
     try {
-        const axios = require('axios');
         await axios.get(`${url.replace(/\/$/, '')}/health`, { timeout: 10000 });
     } catch (err) {
         console.warn(`⚠️  Keep-alive falhou: ${err.message}`);
@@ -1722,7 +1721,15 @@ async function iniciarBot() {
     if (botRodando) return;
     botRodando = true;
     const minhaGeracao = ++geracaoBot;
-    const { state, saveCreds } = await useMultiFileAuthState(path.join(DATA_DIR, 'sessao'));
+    let state, saveCreds;
+    try {
+        ({ state, saveCreds } = await useMultiFileAuthState(path.join(DATA_DIR, 'sessao')));
+    } catch (err) {
+        registrarErro('Sessão/Boot', `Falha ao carregar estado da sessão: ${err.message}`);
+        botRodando = false;
+        setTimeout(iniciarBot, 5000);
+        return;
+    }
 
     const sock = makeWASocket({
         auth: state,
@@ -1958,4 +1965,26 @@ async function iniciarBot() {
     });
 }
 
-iniciarBot();
+// Encerramento gracioso no Render (SIGTERM antes de cada novo deploy).
+// Fecha o socket sem fazer logout — a sessão salva no disco é reutilizada
+// na próxima inicialização, evitando um QR desnecessário.
+process.on('SIGTERM', () => {
+    console.log('📴 SIGTERM recebido — encerrando graciosamente...');
+    stats.status = 'encerrando';
+    if (sockAtual) { try { sockAtual.end(undefined); } catch {} }
+    setTimeout(() => process.exit(0), 2000);
+});
+
+// Captura erros não tratados para evitar queda silenciosa do processo.
+process.on('uncaughtException', err => {
+    registrarErro('Processo', `uncaughtException: ${err.message}`);
+});
+process.on('unhandledRejection', reason => {
+    registrarErro('Processo', `unhandledRejection: ${reason}`);
+});
+
+iniciarBot().catch(err => {
+    registrarErro('Boot', err.message);
+    botRodando = false;
+    setTimeout(iniciarBot, 5000);
+});
