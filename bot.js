@@ -1504,6 +1504,7 @@ http.createServer(async (req, res) => {
             instagramPostado: stats.instagramPostado,
             instagramFalha: stats.instagramFalha,
             filaRetry: stats.filaRetry.length,
+            arquivosSessao: contarArquivosSessao(),
         }));
         return;
     }
@@ -1664,15 +1665,22 @@ function agendarAvisoMatinal(sock, grupoAvisoId) {
         timerAvisoMatinal = null;
     }
 
-    const agora   = new Date();
-    const disparo = new Date();
-    disparo.setHours(HORA_AVISO, MINUTO_AVISO, 0, 0);
-    if (disparo <= agora) disparo.setDate(disparo.getDate() + 1);
+    // Calcula o próximo disparo em horário de Brasília (America/Sao_Paulo),
+    // para que HORA_AVISO=6 signifique 6h BRT independente do TZ do servidor
+    // (Render roda em UTC — sem isso o aviso disparava às 3h30 BRT com HORA_AVISO=6).
+    const agora  = new Date();
+    const nowSP  = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour12: false }));
+    const alvo   = new Date(nowSP);
+    alvo.setHours(HORA_AVISO, MINUTO_AVISO, 0, 0);
+    if (alvo <= nowSP) alvo.setDate(alvo.getDate() + 1);
 
-    const ms      = disparo - agora;
+    // offsetMs: diferença entre o UTC real e o "pseudo-local" SP criado pelo toLocaleString
+    const offsetMs = agora - nowSP;
+    const ms = (alvo.getTime() + offsetMs) - agora.getTime();
+
     const horas   = Math.floor(ms / 3600000);
     const minutos = Math.floor((ms % 3600000) / 60000);
-    console.log(`⏰ Aviso matinal agendado para ${disparo.toLocaleTimeString('pt-BR')} (em ${horas}h ${minutos}min)`);
+    console.log(`⏰ Aviso matinal agendado para ${alvo.toLocaleString('pt-BR')} BRT (em ${horas}h ${minutos}min)`);
 
     timerAvisoMatinal = setTimeout(async () => {
         timerAvisoMatinal = null;
@@ -1760,7 +1768,7 @@ async function iniciarBot() {
             botRodando = false;
             const codigoSaida = lastDisconnect?.error?.output?.statusCode;
             const reiniciar = codigoSaida !== DisconnectReason.loggedOut;
-            console.log(`Conexão encerrada (código ${codigoSaida}). Reiniciando: ${reiniciar}`);
+            console.log(`Conexão encerrada (código ${codigoSaida}, erro: ${lastDisconnect?.error?.message || 'sem mensagem'}). Reiniciando: ${reiniciar}`);
             if (reiniciar) {
                 stats.reconexoes++;
                 falhasConsecutivas++;
