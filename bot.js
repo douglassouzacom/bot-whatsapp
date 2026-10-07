@@ -600,7 +600,7 @@ async function marcarVendidoNoInstagram(stanzaIdCitado) {
             return;
         }
 
-        await axios.post(MAKE_WEBHOOK, {
+        await axios.post(MAKE_WEBHOOK_VENDIDO, {
             action: 'vendido',
             postId: dado.postId,
             caption: dado.caption,
@@ -1077,12 +1077,19 @@ function gerarHtmlStatus(qrDataUrl) {
     &nbsp;|&nbsp; <small>Atualiza em 15s</small></p>
 
     <div class="grid">
-      <div class="card"><div class="num">${stats.mensagensRecebidas}</div><div class="label">📨 Mensagens Recebidas</div></div>
-      <div class="card"><div class="num">${stats.mensagensReencaminhadas}</div><div class="label">📤 Reencaminhadas</div></div>
-      <div class="card"><div class="num">${stats.instagramPostado}</div><div class="label">📸 Instagram OK</div></div>
-      <div class="card"><div class="num">${stats.instagramFalha}</div><div class="label">❌ Instagram Falha</div></div>
+      <div class="card"><div class="num">${stats.mensagensRecebidas}</div><div class="label">📨 Recebidas (total)</div></div>
+      <div class="card"><div class="num">${stats.mensagensReencaminhadas}</div><div class="label">📤 Reencaminhadas (total)</div></div>
+      <div class="card"><div class="num">${stats.instagramPostado}</div><div class="label">📸 Instagram OK (total)</div></div>
+      <div class="card"><div class="num">${stats.instagramFalha}</div><div class="label">❌ Instagram Falha (total)</div></div>
       <div class="card"><div class="num">${imagensCache.size}</div><div class="label">🖼️ Imagens em Cache</div></div>
       <div class="card"><div class="num">${instagramPosts.size}</div><div class="label">🔖 Posts Mapeados</div></div>
+    </div>
+
+    <h2>📅 Hoje</h2>
+    <div class="grid">
+      <div class="card"><div class="num">${stats.diaReencaminhadas}</div><div class="label">📤 Reencaminhadas hoje</div></div>
+      <div class="card"><div class="num">${stats.diaPostado}</div><div class="label">📸 Instagram OK hoje</div></div>
+      <div class="card"><div class="num">${stats.diaFalha}</div><div class="label">❌ Falhas Instagram hoje</div></div>
     </div>
 
     <h2>📋 Últimos Erros</h2>
@@ -1173,7 +1180,7 @@ http.createServer(async (req, res) => {
     if (reqPath === '/vendido-teste') {
         if (ultimoPostInstagram) {
             try {
-                await axios.post(MAKE_WEBHOOK, {
+                await axios.post(MAKE_WEBHOOK_VENDIDO, {
                     action: 'vendido',
                     postId: ultimoPostInstagram.postId,
                     caption: ultimoPostInstagram.caption,
@@ -1503,6 +1510,9 @@ http.createServer(async (req, res) => {
             mensagensReencaminhadas: stats.mensagensReencaminhadas,
             instagramPostado: stats.instagramPostado,
             instagramFalha: stats.instagramFalha,
+            diaReencaminhadas: stats.diaReencaminhadas,
+            diaPostado: stats.diaPostado,
+            diaFalha: stats.diaFalha,
             filaRetry: stats.filaRetry.length,
             arquivosSessao: contarArquivosSessao(),
         }));
