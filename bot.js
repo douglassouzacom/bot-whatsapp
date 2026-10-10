@@ -514,6 +514,12 @@ function isAnuncioAbaixouPreco(texto) {
 // Envia foto ou vídeo para Make (posta no Instagram) e guarda o postId retornado
 // tipo: 'image' | 'video'
 async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', tentativa = 1) {
+    if (!MAKE_WEBHOOK) {
+        registrarErro('Make/Post', 'MAKE_WEBHOOK não configurado — configure a variável de ambiente no Render');
+        stats.instagramFalha++;
+        stats.diaFalha++;
+        return;
+    }
     try {
         const { url } = gerarUrlImagem(buffer);
         const payload = tipo === 'video'
@@ -625,7 +631,7 @@ async function resolverDestinoAlerta() {
     const numeroBot = sockAtual.user.id.split(':')[0].split('@')[0];
     const numero = (WHATSAPP_ALERTA || numeroBot).replace(/\D/g, '');
     if (!numero) return { erro: 'sem-numero' };
-    if (_destinoAlertaCache && _destinoAlertaCache.numero === numero) return _destinoAlertaCache;
+    if (_destinoAlertaCache && _destinoAlertaCache.numero === numero && !_destinoAlertaCache.erroConsulta) return _destinoAlertaCache;
     const d = { numero, jid: `${numero}@s.whatsapp.net`, exists: null, usouProprioBot: !WHATSAPP_ALERTA };
     try {
         const r = await sockAtual.onWhatsApp(numero);
@@ -1770,6 +1776,7 @@ async function iniciarBot() {
             ultimoQR = null;
             stats.status = 'conectado';
             falhasConsecutivas = 0;            // reconectou: zera o contador de falhas
+            _destinoAlertaCache = null;        // força re-resolução do JID com o novo socket
             console.log('\n✅ Bot conectado!\n');
             setTimeout(buscarGrupos, 3000);
         }
