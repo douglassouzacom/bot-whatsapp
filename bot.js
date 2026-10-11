@@ -35,6 +35,8 @@ const stats = {
     diaFalha: 0,
     diaReencaminhadas: 0,
     filaRetry: [],
+    // grupos encontrados na última busca (null = não encontrado ainda)
+    grupos: { origemNome: null, destinoNome: null, avisoNome: null },
 };
 
 function registrarErro(contexto, mensagem) {
@@ -1098,6 +1100,13 @@ function gerarHtmlStatus(qrDataUrl) {
       <div class="card"><div class="num">${stats.diaFalha}</div><div class="label">❌ Falhas Instagram hoje</div></div>
     </div>
 
+    <h2>📡 Grupos WhatsApp</h2>
+    <ul>
+      <li>📥 Origem (${escapeHtml(GRUPO_ORIGEM_NOME)}): ${stats.grupos.origemNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.origemNome) + ' ✅</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
+      <li>📤 Destino (${escapeHtml(GRUPO_DESTINO_NOME)}): ${stats.grupos.destinoNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.destinoNome) + ' ✅</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
+      <li>📢 Aviso (${escapeHtml(GRUPO_AVISO_NOME)}): ${stats.grupos.avisoNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.avisoNome) + ' ✅</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
+    </ul>
+
     <h2>📋 Últimos Erros</h2>
     <ul>${errosHtml}</ul>
 
@@ -1218,6 +1227,9 @@ http.createServer(async (req, res) => {
     // Make.com envia: POST /webhook-instagram-id  { stanzaId, postId }
     if (req.method === 'POST' && reqPath === '/webhook-instagram-id') {
         let body = '';
+        req.on('error', (err) => {
+            registrarErro('Webhook/Body', err.message);
+        });
         req.on('data', chunk => { body += chunk; });
         req.on('end', () => {
             try {
@@ -1521,6 +1533,14 @@ http.createServer(async (req, res) => {
             diaFalha: stats.diaFalha,
             filaRetry: stats.filaRetry.length,
             arquivosSessao: contarArquivosSessao(),
+            grupos: {
+                origemEncontrado: !!stats.grupos.origemNome,
+                destinoEncontrado: !!stats.grupos.destinoNome,
+                avisoEncontrado: !!stats.grupos.avisoNome,
+                origemNome: stats.grupos.origemNome || null,
+                destinoNome: stats.grupos.destinoNome || null,
+                avisoNome: stats.grupos.avisoNome || null,
+            },
         }));
         return;
     }
@@ -1611,6 +1631,30 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Diagnóstico de grupos: /grupos — mostra o status dos grupos configurados
+    if (reqPath === '/grupos') {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+            configurado: {
+                origemNome: GRUPO_ORIGEM_NOME,
+                destinoNome: GRUPO_DESTINO_NOME,
+                avisoNome: GRUPO_AVISO_NOME,
+            },
+            encontrado: {
+                origemNome: stats.grupos.origemNome || null,
+                destinoNome: stats.grupos.destinoNome || null,
+                avisoNome: stats.grupos.avisoNome || null,
+            },
+            cachedIds: {
+                origemId: _cachedGrupos.origemId || null,
+                destinoId: _cachedGrupos.destinoId || null,
+                avisoId: _cachedGrupos.avisoId || null,
+            },
+            statusBot: stats.status,
+        }, null, 2));
+        return;
+    }
+
     // Painel principal
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     if (ultimoQR) {
@@ -1644,7 +1688,7 @@ const GRUPO_ORIGEM_NOME   = process.env.GRUPO_ORIGEM_NOME  || 'Ronei repasse';
 const GRUPO_DESTINO_NOME  = process.env.GRUPO_DESTINO_NOME || 'MINAS BRASIL REPASSE GRUPO 8';
 const GRUPO_AVISO_NOME    = process.env.GRUPO_AVISO_NOME   || 'MINAS BRASIL REPASSE GRUPO 8';
 const ACRESCIMO           = _envInt(process.env.ACRESCIMO, 2000);
-const HORA_AVISO          = _envInt(process.env.HORA_AVISO, 9);   // 9 UTC = 06:30 BRT
+const HORA_AVISO          = _envInt(process.env.HORA_AVISO, 9);   // hora BRT do aviso matinal (padrão: 9h30 BRT; configure HORA_AVISO=6 no Render para 06:30 BRT)
 const MINUTO_AVISO        = _envInt(process.env.MINUTO_AVISO, 30);
 // =============================================
 
@@ -1822,9 +1866,9 @@ async function iniciarBot() {
             const grupos = await sock.groupFetchAllParticipating();
             for (const [id, info] of Object.entries(grupos)) {
                 const nome = info.subject.toLowerCase();
-                if (nome.includes(GRUPO_ORIGEM_NOME.toLowerCase()))  { grupoOrigemId  = id; registrarSucesso('Grupos', 'Origem:  ' + info.subject); }
-                if (nome.includes(GRUPO_DESTINO_NOME.toLowerCase())) { grupoDestinoId = id; registrarSucesso('Grupos', 'Destino: ' + info.subject); }
-                if (nome.includes(GRUPO_AVISO_NOME.toLowerCase()))   { grupoAvisoId   = id; registrarSucesso('Grupos', 'Aviso:   ' + info.subject); }
+                if (nome.includes(GRUPO_ORIGEM_NOME.toLowerCase()))  { grupoOrigemId  = id; stats.grupos.origemNome  = info.subject; registrarSucesso('Grupos', 'Origem:  ' + info.subject); }
+                if (nome.includes(GRUPO_DESTINO_NOME.toLowerCase())) { grupoDestinoId = id; stats.grupos.destinoNome = info.subject; registrarSucesso('Grupos', 'Destino: ' + info.subject); }
+                if (nome.includes(GRUPO_AVISO_NOME.toLowerCase()))   { grupoAvisoId   = id; stats.grupos.avisoNome   = info.subject; registrarSucesso('Grupos', 'Aviso:   ' + info.subject); }
             }
             const grupoFaltando = [];
             if (!grupoOrigemId)  { registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);  grupoFaltando.push(`ORIGEM (${GRUPO_ORIGEM_NOME})`); }
