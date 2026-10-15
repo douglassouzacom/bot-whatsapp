@@ -1136,6 +1136,7 @@ let ultimoQR = null;
 
 // Servidor web — painel + QR Code + serviço de imagens
 http.createServer(async (req, res) => {
+    try {
     const reqPath = req.url ? req.url.split('?')[0] : '/';
     // Rota QR dedicada: /qr
     if (reqPath === '/qr') {
@@ -1662,6 +1663,13 @@ http.createServer(async (req, res) => {
         res.end(gerarHtmlStatus(qrDataUrl));
     } else {
         res.end(gerarHtmlStatus(null));
+    }
+    } catch (err) {
+        registrarErro('HTTP', err.message);
+        if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        }
+        try { res.end('Erro interno'); } catch {}
     }
 }).listen(process.env.PORT || 3000, () => {
     console.log('🌐 Painel de monitoramento rodando na porta ' + (process.env.PORT || 3000));
