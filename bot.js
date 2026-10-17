@@ -1520,7 +1520,8 @@ http.createServer(async (req, res) => {
 
     // Health check: /health — retorna JSON para monitoramento externo e keep-alive
     if (reqPath === '/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        const httpStatus = stats.status === 'conectado' ? 200 : 503;
+        res.writeHead(httpStatus, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             status: stats.status,
             uptime: Math.floor((Date.now() - new Date(stats.iniciadoEm)) / 1000),
@@ -1680,7 +1681,7 @@ setInterval(async () => {
     const url = _BASE_URL_EXTERNA;
     if (!url) return;
     try {
-        await axios.get(`${url.replace(/\/$/, '')}/health`, { timeout: 10000 });
+        await axios.get(`${url.replace(/\/$/, '')}/health`, { timeout: 10000, validateStatus: () => true });
     } catch (err) {
         console.warn(`⚠️  Keep-alive falhou: ${err.message}`);
     }
@@ -1882,7 +1883,10 @@ async function iniciarBot() {
             if (!grupoOrigemId)  { registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);  grupoFaltando.push(`ORIGEM (${GRUPO_ORIGEM_NOME})`); }
             if (!grupoDestinoId) { registrarErro('Grupos', 'DESTINO não encontrado: ' + GRUPO_DESTINO_NOME); grupoFaltando.push(`DESTINO (${GRUPO_DESTINO_NOME})`); }
             if (!grupoAvisoId)   { registrarErro('Grupos', 'AVISO não encontrado: '   + GRUPO_AVISO_NOME);   grupoFaltando.push(`AVISO (${GRUPO_AVISO_NOME})`); }
-            if (grupoFaltando.length) alertarGrupoFaltando(grupoFaltando);
+            if (grupoFaltando.length) {
+                alertarGrupoFaltando(grupoFaltando);
+                if (minhaGeracao === geracaoBot && stats.status === 'conectado') setTimeout(buscarGrupos, 30000);
+            }
 
             if (grupoOrigemId && grupoDestinoId) {
                 _cachedGrupos = { origemId: grupoOrigemId, destinoId: grupoDestinoId, avisoId: grupoAvisoId };
