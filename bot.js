@@ -1042,6 +1042,11 @@ let ultimoPostInstagram = restaurarUltimoPost();
 // Referência ao socket ativo — necessária para fechar corretamente no /reset-sessao
 let sockAtual = null;
 
+// Deduplicação de mensagens: Baileys pode entregar o mesmo msg.key.id mais de uma vez
+// durante reconexão rápida — sem isso, um único anúncio seria reencaminhado duas vezes
+// e postado duas vezes no Instagram.
+const msgIdsProcessados = new Set();
+
 // Painel HTML de monitoramento
 function gerarHtmlStatus(qrDataUrl) {
     const uptime = Math.floor((Date.now() - new Date(stats.iniciadoEm)) / 1000);
@@ -1907,6 +1912,9 @@ async function iniciarBot() {
         if (type !== 'notify') return;
 
         for (const msg of messages) {
+            const _msgId = msg.key?.id;
+            if (_msgId && msgIdsProcessados.has(_msgId)) { console.log(`⚠️ Msg duplicada ignorada: ${_msgId}`); continue; }
+            if (_msgId) { msgIdsProcessados.add(_msgId); if (msgIdsProcessados.size > 500) msgIdsProcessados.delete(msgIdsProcessados.values().next().value); }
             try {
                 // Comando "SIM N" do Douglas: aprova o impulsionamento do carro N.
                 // Vem ANTES do filtro fromMe de proposito: quando o bot roda no PROPRIO
@@ -2009,9 +2017,11 @@ async function iniciarBot() {
                 if (temMidia) {
                     const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
                     const tipoMidia = msg.message.imageMessage ? 'image' : msg.message.videoMessage ? 'video' : 'document';
-                    const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
-
-                    const enviada = await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: textoAjustado });
+                    const mimeDefault = tipoMidia === 'document' ? 'application/octet-stream' : 'image/jpeg';
+                    const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || mimeDefault;
+                    const payloadEnvio = { [tipoMidia]: buffer, mimetype, caption: textoAjustado };
+                    if (tipoMidia === 'document') payloadEnvio.fileName = msg.message.documentMessage?.fileName || 'documento';
+                    const enviada = await sock.sendMessage(grupoDestinoId, payloadEnvio);
                     registrarPostGrupo8(msg.key.id, enviada, textoAjustado);
                     stats.mensagensReencaminhadas++;
                     stats.diaReencaminhadas++;
