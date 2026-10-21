@@ -1235,6 +1235,10 @@ http.createServer(async (req, res) => {
         let body = '';
         req.on('error', (err) => {
             registrarErro('Webhook/Body', err.message);
+            if (!res.headersSent) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ erro: 'erro no recebimento da requisição: ' + err.message }));
+            }
         });
         req.on('data', chunk => { body += chunk; });
         req.on('end', () => {
@@ -1759,8 +1763,13 @@ function agendarAvisoMatinal(sock, grupoAvisoId) {
     timerAvisoMatinal = setTimeout(async () => {
         timerAvisoMatinal = null;
         try {
-            await sock.sendMessage(grupoAvisoId, { text: TEXTO_AVISO });
-            registrarSucesso('Aviso Matinal', 'Enviado com sucesso!');
+            const s = sockAtual;
+            if (!s || !s.user) {
+                registrarErro('Aviso Matinal', 'Bot desconectado no momento do disparo — aviso adiado ao próximo ciclo');
+            } else {
+                await s.sendMessage(grupoAvisoId, { text: TEXTO_AVISO });
+                registrarSucesso('Aviso Matinal', 'Enviado com sucesso!');
+            }
         } catch (err) {
             registrarErro('Aviso Matinal', err.message);
         }
@@ -1975,6 +1984,8 @@ async function iniciarBot() {
                     // FALLBACK: anúncio original não encontrado (carro antigo, ou bot reiniciado).
                     // Mantém o comportamento antigo de reenviar a foto, para nunca deixar sem marcação.
                     if (!marcou) {
+                        const motivo = !stanzaIdCitado ? 'sem citação' : `stanzaId ${stanzaIdCitado} não mapeado`;
+                        console.log(`⚠️  VENDIDO/RESERVADO sem match (${motivo}) — usando fallback com reenvio de mídia`);
                         const temMidia = msg.message?.imageMessage || msg.message?.videoMessage;
                         const msgCitada = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
                         const temMidiaCitada = msgCitada?.imageMessage || msgCitada?.videoMessage;
