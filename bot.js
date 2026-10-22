@@ -217,6 +217,9 @@ const SESSAO_DIR    = path.join(DATA_DIR, 'sessao');
 const LIMIAR_FAXINA = parseInt(process.env.LIMIAR_FAXINA, 10) || 20000; // dispara faxina preventiva
 const LIMIAR_ALERTA = parseInt(process.env.LIMIAR_ALERTA, 10) || 45000; // avisa no WhatsApp (perigo)
 let ultimoAlertaDisco = 0;
+// Inicializado aqui para evitar TDZ: alertarDiscoCritico (abaixo) é chamada
+// em faxinaSessao('boot') antes que a declaração original (mais abaixo) fosse alcançada.
+let sockAtual = null;
 
 function contarArquivosSessao() {
     try { return fs.readdirSync(SESSAO_DIR).length; } catch { return 0; }
@@ -1039,9 +1042,6 @@ setInterval(async () => {
 // Último post do Instagram (para /vendido-teste) — restaurado do disco se disponível
 let ultimoPostInstagram = restaurarUltimoPost();
 
-// Referência ao socket ativo — necessária para fechar corretamente no /reset-sessao
-let sockAtual = null;
-
 // Deduplicação de mensagens: Baileys pode entregar o mesmo msg.key.id mais de uma vez
 // durante reconexão rápida — sem isso, um único anúncio seria reencaminhado duas vezes
 // e postado duas vezes no Instagram.
@@ -1694,7 +1694,7 @@ setInterval(async () => {
     } catch (err) {
         console.warn(`⚠️  Keep-alive falhou: ${err.message}`);
     }
-}, 14 * 60 * 1000);
+}, 13 * 60 * 1000);
 
 // =============================================
 //  CONFIGURAÇÃO
