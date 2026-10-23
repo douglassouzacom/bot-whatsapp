@@ -1696,6 +1696,18 @@ setInterval(async () => {
     }
 }, 13 * 60 * 1000);
 
+// Watchdog: detecta bot parado sem reconexão agendada e força restart.
+// Cobre edge cases onde botRodando fica false mas nenhum setTimeout foi criado.
+setInterval(() => {
+    if (stats.status !== 'conectado' && !botRodando) {
+        registrarErro('Watchdog', 'Bot parado sem reconexão pendente — forçando restart');
+        iniciarBot().catch(err => {
+            registrarErro('Watchdog', err.message);
+            botRodando = false;
+        });
+    }
+}, 5 * 60 * 1000);
+
 // =============================================
 //  CONFIGURAÇÃO
 // =============================================
@@ -1736,6 +1748,7 @@ function ajustarPrecos(texto) {
 
 // Handle global — cancelado e recriado a cada reconexão para evitar timers duplicados
 let timerAvisoMatinal = null;
+let _avisoMatinalPendente = null; // { grupoAvisoId, agendadoEm } — disparo perdido por desconexão
 
 function agendarAvisoMatinal(sock, grupoAvisoId) {
     if (timerAvisoMatinal) {
@@ -1765,10 +1778,12 @@ function agendarAvisoMatinal(sock, grupoAvisoId) {
         try {
             const s = sockAtual;
             if (!s || !s.user) {
-                registrarErro('Aviso Matinal', 'Bot desconectado no momento do disparo — aviso adiado ao próximo ciclo');
+                registrarErro('Aviso Matinal', 'Bot desconectado no momento do disparo — tentará ao reconectar');
+                _avisoMatinalPendente = { grupoAvisoId, agendadoEm: new Date().toISOString() };
             } else {
                 await s.sendMessage(grupoAvisoId, { text: TEXTO_AVISO });
                 registrarSucesso('Aviso Matinal', 'Enviado com sucesso!');
+                _avisoMatinalPendente = null;
             }
         } catch (err) {
             registrarErro('Aviso Matinal', err.message);
@@ -1907,7 +1922,19 @@ async function iniciarBot() {
                 salvarGrupos(_cachedGrupos);
             }
 
-            if (grupoAvisoId) agendarAvisoMatinal(sock, grupoAvisoId);
+            if (grupoAvisoId) {
+                agendarAvisoMatinal(sock, grupoAvisoId);
+                // Aviso perdido por desconexão: reenvia se ainda dentro da janela de 2h
+                if (_avisoMatinalPendente) {
+                    const atrasado = Date.now() - new Date(_avisoMatinalPendente.agendadoEm).getTime();
+                    if (atrasado <= 2 * 60 * 60 * 1000) {
+                        sock.sendMessage(grupoAvisoId, { text: TEXTO_AVISO })
+                            .then(() => registrarSucesso('Aviso Matinal', `Aviso atrasado enviado (${Math.floor(atrasado / 60000)}min de atraso)`))
+                            .catch(err => registrarErro('Aviso Matinal', `Falhou ao reenviar aviso atrasado: ${err.message}`));
+                    }
+                    _avisoMatinalPendente = null;
+                }
+            }
         } catch (err) {
             registrarErro('buscarGrupos', err.message);
             // Só retenta se ainda estamos na mesma geração E conectados.
