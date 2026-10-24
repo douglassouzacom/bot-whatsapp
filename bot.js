@@ -1107,9 +1107,9 @@ function gerarHtmlStatus(qrDataUrl) {
 
     <h2>📡 Grupos WhatsApp</h2>
     <ul>
-      <li>📥 Origem (${escapeHtml(GRUPO_ORIGEM_NOME)}): ${stats.grupos.origemNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.origemNome) + ' ✅</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
-      <li>📤 Destino (${escapeHtml(GRUPO_DESTINO_NOME)}): ${stats.grupos.destinoNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.destinoNome) + ' ✅</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
-      <li>📢 Aviso (${escapeHtml(GRUPO_AVISO_NOME)}): ${stats.grupos.avisoNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.avisoNome) + ' ✅</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
+      <li>📥 Origem (${escapeHtml(GRUPO_ORIGEM_NOME)}): ${stats.grupos.origemNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.origemNome) + ' ✅</b>' : _cachedGrupos.origemNome ? '<b style="color:#ffaa00">' + escapeHtml(_cachedGrupos.origemNome) + ' ⏳ (cache)</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
+      <li>📤 Destino (${escapeHtml(GRUPO_DESTINO_NOME)}): ${stats.grupos.destinoNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.destinoNome) + ' ✅</b>' : _cachedGrupos.destinoNome ? '<b style="color:#ffaa00">' + escapeHtml(_cachedGrupos.destinoNome) + ' ⏳ (cache)</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
+      <li>📢 Aviso (${escapeHtml(GRUPO_AVISO_NOME)}): ${stats.grupos.avisoNome ? '<b style="color:#00ff88">' + escapeHtml(stats.grupos.avisoNome) + ' ✅</b>' : _cachedGrupos.avisoNome ? '<b style="color:#ffaa00">' + escapeHtml(_cachedGrupos.avisoNome) + ' ⏳ (cache)</b>' : '<b style="color:#ff4444">NÃO ENCONTRADO ❌</b>'}</li>
     </ul>
 
     <h2>📋 Últimos Erros</h2>
@@ -1694,7 +1694,7 @@ setInterval(async () => {
     } catch (err) {
         console.warn(`⚠️  Keep-alive falhou: ${err.message}`);
     }
-}, 13 * 60 * 1000);
+}, 12 * 60 * 1000);
 
 // Watchdog: detecta bot parado sem reconexão agendada e força restart.
 // Cobre edge cases onde botRodando fica false mas nenhum setTimeout foi criado.
@@ -1721,6 +1721,7 @@ const ACRESCIMO           = _envInt(process.env.ACRESCIMO, 2000);
 const HORA_AVISO          = _envInt(process.env.HORA_AVISO, 9);   // hora BRT do aviso matinal (padrão: 9h30 BRT; configure HORA_AVISO=6 no Render para 06:30 BRT)
 const MINUTO_AVISO        = _envInt(process.env.MINUTO_AVISO, 30);
 // =============================================
+console.log(`⚙️  Config: ACRESCIMO=+R$${ACRESCIMO.toLocaleString('pt-BR')} | Aviso=${HORA_AVISO}h${String(MINUTO_AVISO).padStart(2,'0')} BRT | Origem="${GRUPO_ORIGEM_NOME}" | Destino="${GRUPO_DESTINO_NOME}" | Aviso="${GRUPO_AVISO_NOME}"`);
 
 const TEXTO_AVISO = `🚨 *REPASSE — REGRAS DA CASA* 🚨
 
@@ -1918,7 +1919,12 @@ async function iniciarBot() {
             }
 
             if (grupoOrigemId && grupoDestinoId) {
-                _cachedGrupos = { origemId: grupoOrigemId, destinoId: grupoDestinoId, avisoId: grupoAvisoId };
+                _cachedGrupos = {
+                    origemId: grupoOrigemId, destinoId: grupoDestinoId, avisoId: grupoAvisoId,
+                    origemNome: stats.grupos.origemNome || _cachedGrupos.origemNome || null,
+                    destinoNome: stats.grupos.destinoNome || _cachedGrupos.destinoNome || null,
+                    avisoNome: stats.grupos.avisoNome || _cachedGrupos.avisoNome || null,
+                };
                 salvarGrupos(_cachedGrupos);
             }
 
