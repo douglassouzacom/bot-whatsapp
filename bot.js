@@ -1233,6 +1233,7 @@ http.createServer(async (req, res) => {
     // Make.com envia: POST /webhook-instagram-id  { stanzaId, postId }
     if (req.method === 'POST' && reqPath === '/webhook-instagram-id') {
         let body = '';
+        const BODY_LIMIT = 65536; // 64 KB — stanzaId+postId é bem menor; rejeita payloads absurdos
         req.on('error', (err) => {
             registrarErro('Webhook/Body', err.message);
             if (!res.headersSent) {
@@ -1240,7 +1241,17 @@ http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ erro: 'erro no recebimento da requisição: ' + err.message }));
             }
         });
-        req.on('data', chunk => { body += chunk; });
+        req.on('data', chunk => {
+            body += chunk;
+            if (body.length > BODY_LIMIT) {
+                registrarErro('Webhook/Body', `Payload muito grande (${body.length} bytes) — descartado`);
+                if (!res.headersSent) {
+                    res.writeHead(413, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ erro: 'payload muito grande' }));
+                }
+                req.destroy();
+            }
+        });
         req.on('end', () => {
             try {
                 const { stanzaId, postId } = JSON.parse(body);
@@ -1685,7 +1696,7 @@ http.createServer(async (req, res) => {
     console.log('🌐 Painel de monitoramento rodando na porta ' + (process.env.PORT || 3000));
 });
 
-// Keep-alive: pinga o próprio /health a cada 14 minutos para não adormecer no Render.com
+// Keep-alive: pinga o próprio /health a cada 12 minutos para não adormecer no Render.com
 setInterval(async () => {
     const url = _BASE_URL_EXTERNA;
     if (!url) return;
@@ -1926,6 +1937,14 @@ async function iniciarBot() {
                     avisoNome: stats.grupos.avisoNome || _cachedGrupos.avisoNome || null,
                 };
                 salvarGrupos(_cachedGrupos);
+                // Re-verifica grupos a cada 6h para detectar renomeação ou remoção do bot
+                // sem precisar de reconexão (falha silenciosa mais comum em prod)
+                setTimeout(() => {
+                    if (minhaGeracao === geracaoBot && stats.status === 'conectado') {
+                        console.log('🔍 Re-verificando grupos (check periódico 6h)...');
+                        buscarGrupos();
+                    }
+                }, 6 * 60 * 60 * 1000);
             }
 
             if (grupoAvisoId) {
@@ -1956,7 +1975,14 @@ async function iniciarBot() {
         for (const msg of messages) {
             const _msgId = msg.key?.id;
             if (_msgId && msgIdsProcessados.has(_msgId)) { console.log(`⚠️ Msg duplicada ignorada: ${_msgId}`); continue; }
-            if (_msgId) { msgIdsProcessados.add(_msgId); if (msgIdsProcessados.size > 500) msgIdsProcessados.delete(msgIdsProcessados.values().next().value); }
+            if (_msgId) {
+                msgIdsProcessados.add(_msgId);
+                if (msgIdsProcessados.size > 500) {
+                    // Trim batch: remove 100 entradas mais antigas de uma vez para lidar com bursts
+                    const iter = msgIdsProcessados.values();
+                    for (let i = 0; i < 100; i++) msgIdsProcessados.delete(iter.next().value);
+                }
+            }
             try {
                 // Comando "SIM N" do Douglas: aprova o impulsionamento do carro N.
                 // Vem ANTES do filtro fromMe de proposito: quando o bot roda no PROPRIO
