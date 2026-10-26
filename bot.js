@@ -1096,6 +1096,7 @@ function gerarHtmlStatus(qrDataUrl) {
       <div class="card"><div class="num">${stats.instagramFalha}</div><div class="label">❌ Instagram Falha (total)</div></div>
       <div class="card"><div class="num">${imagensCache.size}</div><div class="label">🖼️ Imagens em Cache</div></div>
       <div class="card"><div class="num">${instagramPosts.size}</div><div class="label">🔖 Posts Mapeados</div></div>
+      ${(() => { const qtd = contarArquivosSessao(); const cor = qtd >= LIMIAR_ALERTA ? '#ff4444' : qtd >= LIMIAR_FAXINA ? '#ffaa00' : '#00ff88'; return `<div class="card" style="border-color:${cor}"><div class="num" style="color:${cor}">${qtd}</div><div class="label">💾 Arquivos Sessão${qtd >= LIMIAR_FAXINA ? ' ⚠️' : ''}</div></div>`; })()}
     </div>
 
     <h2>📅 Hoje</h2>
@@ -1200,6 +1201,16 @@ http.createServer(async (req, res) => {
     // Rota de teste VENDIDO: /vendido-teste
     if (reqPath === '/vendido-teste') {
         if (ultimoPostInstagram) {
+            if (!ultimoPostInstagram.postId) {
+                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(`<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="5;url=/"></head>
+                <body style="background:#1a1a2e;color:#ffaa00;font-family:Arial;text-align:center;padding:60px">
+                <h2>⏳ PostId ainda não chegou do Make.com</h2>
+                <p>O último carro foi enviado ao Make.com, mas o Instagram ainda não confirmou o postId.</p>
+                <p>Aguarde alguns minutos e tente novamente, ou verifique se o cenário do Make.com está ativo.</p>
+                <a href="/" style="color:#00d4ff">Voltar ao painel</a></body></html>`);
+                return;
+            }
             try {
                 await axios.post(MAKE_WEBHOOK_VENDIDO, {
                     action: 'vendido',
