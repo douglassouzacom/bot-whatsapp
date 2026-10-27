@@ -72,17 +72,19 @@ setInterval(() => {
     }
 }, 5 * 60 * 1000);
 
-// Log diário de postagens + reset dos contadores à meia-noite
+// Log diário de postagens + reset dos contadores à meia-noite BRT
 function agendarLogDiario() {
-    const agora = new Date();
-    const amanha = new Date(agora);
-    amanha.setHours(0, 0, 0, 0);
-    amanha.setDate(amanha.getDate() + 1);
-    const msAteAmanha = amanha - agora;
+    const agora   = new Date();
+    const nowSP   = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour12: false }));
+    const amanhaSP = new Date(nowSP);
+    amanhaSP.setHours(0, 0, 0, 0);
+    amanhaSP.setDate(amanhaSP.getDate() + 1);
+    const offsetMs   = agora - nowSP; // diferença UTC vs pseudo-local SP
+    const msAteAmanha = (amanhaSP.getTime() + offsetMs) - agora.getTime();
 
     setTimeout(() => {
         console.log(
-            `📊 [RESUMO DO DIA ${new Date().toLocaleDateString('pt-BR')}] ` +
+            `📊 [RESUMO DO DIA ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}] ` +
             `Reencaminhadas: ${stats.diaReencaminhadas} | ` +
             `Instagram OK: ${stats.diaPostado} | ` +
             `Falhas: ${stats.diaFalha}`
@@ -1095,7 +1097,8 @@ function gerarHtmlStatus(qrDataUrl) {
       <div class="card"><div class="num">${stats.instagramPostado}</div><div class="label">📸 Instagram OK (total)</div></div>
       <div class="card"><div class="num">${stats.instagramFalha}</div><div class="label">❌ Instagram Falha (total)</div></div>
       <div class="card"><div class="num">${imagensCache.size}</div><div class="label">🖼️ Imagens em Cache</div></div>
-      <div class="card"><div class="num">${instagramPosts.size}</div><div class="label">🔖 Posts Mapeados</div></div>
+      <div class="card"><div class="num">${instagramPosts.size}</div><div class="label">🔖 Posts IG Mapeados</div></div>
+      <div class="card"><div class="num">${postsGrupo8.size}</div><div class="label">📋 Posts Grupo8</div></div>
       ${(() => { const qtd = contarArquivosSessao(); const cor = qtd >= LIMIAR_ALERTA ? '#ff4444' : qtd >= LIMIAR_FAXINA ? '#ffaa00' : '#00ff88'; return `<div class="card" style="border-color:${cor}"><div class="num" style="color:${cor}">${qtd}</div><div class="label">💾 Arquivos Sessão${qtd >= LIMIAR_FAXINA ? ' ⚠️' : ''}</div></div>`; })()}
     </div>
 
@@ -1264,6 +1267,7 @@ http.createServer(async (req, res) => {
             }
         });
         req.on('end', () => {
+            if (res.headersSent) return; // resposta já enviada (ex.: payload ultrapassou limite)
             try {
                 const { stanzaId, postId } = JSON.parse(body);
                 if (stanzaId && postId) {
