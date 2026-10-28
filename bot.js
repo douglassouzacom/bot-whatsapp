@@ -1928,7 +1928,10 @@ async function iniciarBot() {
     async function buscarGrupos() {
         if (minhaGeracao !== geracaoBot) return;   // socket obsoleto — nao vira zumbi
         try {
-            const grupos = await sock.groupFetchAllParticipating();
+            const grupos = await Promise.race([
+                sock.groupFetchAllParticipating(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout 30s em groupFetchAllParticipating')), 30000)),
+            ]);
             for (const [id, info] of Object.entries(grupos)) {
                 const nome = info.subject.toLowerCase();
                 if (nome.includes(GRUPO_ORIGEM_NOME.toLowerCase()))  { grupoOrigemId  = id; stats.grupos.origemNome  = info.subject; registrarSucesso('Grupos', 'Origem:  ' + info.subject); }
@@ -2017,6 +2020,10 @@ async function iniciarBot() {
 
                 if (msg.key.fromMe) continue;
                 if (msg.key.remoteJid !== grupoOrigemId) continue;
+                if (!grupoDestinoId) {
+                    registrarErro('Mensagem', 'grupoDestinoId ainda não resolvido — mensagem ignorada (aguardando buscarGrupos)');
+                    continue;
+                }
 
                 stats.mensagensRecebidas++;
 
