@@ -2042,7 +2042,10 @@ async function iniciarBot() {
                 // ── VENDIDO / RESERVADO ──────────────────────────────────────
                 if (isVendido || isReservado) {
                     const status = isVendido ? '🚫 *VENDIDO*' : '⏳ *RESERVADO*';
-                    const stanzaIdCitado = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
+                    const stanzaIdCitado =
+                        msg.message?.extendedTextMessage?.contextInfo?.stanzaId ||
+                        msg.message?.imageMessage?.contextInfo?.stanzaId ||
+                        msg.message?.videoMessage?.contextInfo?.stanzaId;
                     const descricao = texto.replace(/vendido|reservado/gi, '').trim();
                     const legendaStatus = descricao ? `${status}\n${descricao}` : status;
 
