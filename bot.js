@@ -1049,6 +1049,26 @@ let ultimoPostInstagram = restaurarUltimoPost();
 // e postado duas vezes no Instagram.
 const msgIdsProcessados = new Set();
 
+// Persistência dos IDs processados (sobrevive a restarts — cobre reconexões do Baileys
+// que re-entregam mensagens recentes após queda). Salva a cada 5min; restaura IDs com
+// menos de 1h no boot, pra cobrir o janela de re-entrega sem lotar o disco.
+const MSGS_PROCESSADAS_FILE = path.join(DATA_DIR, 'msgs_processadas.json');
+(function carregarMsgsProcessadas() {
+    try {
+        if (!fs.existsSync(MSGS_PROCESSADAS_FILE)) return;
+        const { ts, ids } = JSON.parse(fs.readFileSync(MSGS_PROCESSADAS_FILE, 'utf8'));
+        if (Date.now() - ts > 60 * 60 * 1000) return; // arquivo com mais de 1h: ignora
+        let carregados = 0;
+        for (const id of ids) { if (id) { msgIdsProcessados.add(id); carregados++; } }
+        if (carregados > 0) console.log(`📂 ${carregados} IDs de msgs processadas restaurados do disco (< 1h)`);
+    } catch (e) { console.error('Erro ao carregar msgs_processadas.json:', e.message); }
+})();
+setInterval(() => {
+    try {
+        fs.writeFileSync(MSGS_PROCESSADAS_FILE, JSON.stringify({ ts: Date.now(), ids: [...msgIdsProcessados] }));
+    } catch (e) { console.error('Erro ao salvar msgs_processadas.json:', e.message); }
+}, 5 * 60 * 1000);
+
 // Painel HTML de monitoramento
 function gerarHtmlStatus(qrDataUrl) {
     const uptime = Math.floor((Date.now() - new Date(stats.iniciadoEm)) / 1000);
@@ -1711,10 +1731,10 @@ http.createServer(async (req, res) => {
     console.log('🌐 Painel de monitoramento rodando na porta ' + (process.env.PORT || 3000));
 });
 
-// Keep-alive: pinga o próprio /health a cada 12 minutos para não adormecer no Render.com
+// Keep-alive: pinga o próprio /health a cada 12 minutos para não adormecer no Render.com.
+// Usa localhost como fallback quando RENDER_EXTERNAL_URL não está configurado.
 setInterval(async () => {
-    const url = _BASE_URL_EXTERNA;
-    if (!url) return;
+    const url = _BASE_URL_EXTERNA || `http://localhost:${process.env.PORT || 3000}`;
     try {
         await axios.get(`${url.replace(/\/$/, '')}/health`, { timeout: 10000, validateStatus: () => true });
     } catch (err) {
