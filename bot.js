@@ -1783,13 +1783,14 @@ Viu algum carro? *Me chama no privado.*
 *Douglas Souza — Minas Brasil Repasse* 🚗`;
 
 function ajustarPrecos(texto) {
-    return texto.replace(/(R\$\s?)?(\d{1,3}(?:[.,]\d{3})+)/g, (match, prefixo, valorStr) => {
+    return texto.replace(/(R\$\s?)?(\d{1,3}(?:[.,]\d{3})+)(\s*km\b)?/gi, (match, prefixo, valorStr, kmSufixo) => {
+        if (kmSufixo && !prefixo) return match; // quilometragem sem R$: não ajusta
         const limpo  = valorStr.replace(/\./g, '').replace(',', '.');
         const numero = parseFloat(limpo);
         if (isNaN(numero)) return match;
         const novo    = numero + ACRESCIMO;
         const novoStr = novo.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-        return (prefixo || '') + novoStr;
+        return (prefixo || '') + novoStr + (kmSufixo || '');
     });
 }
 
