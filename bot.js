@@ -444,6 +444,14 @@ const JANELA_ALERTA_MAX_MS   = 6 * 60 * 60 * 1000; // 6h
 const WHATSAPP_ALERTA        = (process.env.WHATSAPP_ALERTA || '').replace(/\D/g, '');
 let   ultimoAlertaInstagram  = 0;
 
+// Baixa mídia com timeout explícito (evita que download travado bloqueie o loop de mensagens)
+function downloadComTimeout(msgOrObj, tipo, opts, baileysOpts, ms = 60000) {
+    return Promise.race([
+        downloadMediaMessage(msgOrObj, tipo, opts, baileysOpts),
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`timeout: download de mídia demorou mais de ${ms / 1000}s`)), ms)),
+    ]);
+}
+
 // Redimensiona para 1080x1080 com fundo desfocado da própria imagem + watermark da marca
 async function prepararImagemInstagram(buffer) {
     try {
@@ -1067,7 +1075,7 @@ setInterval(() => {
     try {
         fs.writeFileSync(MSGS_PROCESSADAS_FILE, JSON.stringify({ ts: Date.now(), ids: [...msgIdsProcessados] }));
     } catch (e) { console.error('Erro ao salvar msgs_processadas.json:', e.message); }
-}, 5 * 60 * 1000);
+}, 60 * 1000);
 
 // Painel HTML de monitoramento
 function gerarHtmlStatus(qrDataUrl) {
@@ -2096,7 +2104,7 @@ async function iniciarBot() {
                         const temMidiaCitada = msgCitada?.imageMessage || msgCitada?.videoMessage;
 
                         if (temMidia) {
-                            const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
+                            const buffer    = await downloadComTimeout(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
                             const tipoMidia = msg.message.imageMessage ? 'image' : 'video';
                             const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
                             await sock.sendMessage(grupoDestinoId, { [tipoMidia]: buffer, mimetype, caption: legendaStatus });
@@ -2104,7 +2112,7 @@ async function iniciarBot() {
                             const tipoMidia = msgCitada.imageMessage ? 'image' : 'video';
                             const mimetype  = msgCitada[tipoMidia + 'Message']?.mimetype || 'image/jpeg';
                             const chaveMsg  = { id: stanzaIdCitado, remoteJid: msg.key.remoteJid, fromMe: false };
-                            const buffer    = await downloadMediaMessage(
+                            const buffer    = await downloadComTimeout(
                                 { message: msgCitada, key: chaveMsg }, 'buffer', {},
                                 { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
                             );
@@ -2131,7 +2139,7 @@ async function iniciarBot() {
                 const temMidia = msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage;
 
                 if (temMidia) {
-                    const buffer    = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
+                    const buffer    = await downloadComTimeout(msg, 'buffer', {}, { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage });
                     const tipoMidia = msg.message.imageMessage ? 'image' : msg.message.videoMessage ? 'video' : 'document';
                     const mimeDefault = tipoMidia === 'document' ? 'application/octet-stream' : 'image/jpeg';
                     const mimetype  = msg.message[tipoMidia + 'Message']?.mimetype || mimeDefault;
@@ -2179,6 +2187,7 @@ process.on('SIGTERM', () => {
     console.log('📴 SIGTERM recebido — encerrando graciosamente...');
     stats.status = 'encerrando';
     if (sockAtual) { try { sockAtual.end(undefined); } catch {} }
+    try { fs.writeFileSync(MSGS_PROCESSADAS_FILE, JSON.stringify({ ts: Date.now(), ids: [...msgIdsProcessados] })); } catch {}
     setTimeout(() => process.exit(0), 2000);
 });
 
