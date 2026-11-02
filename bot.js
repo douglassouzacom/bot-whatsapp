@@ -1921,6 +1921,7 @@ async function iniciarBot() {
         if (connection === 'close') {
             stats.status = 'desconectado';
             botRodando = false;
+            sockAtual = null;
             const codigoSaida = lastDisconnect?.error?.output?.statusCode;
             const reiniciar = codigoSaida !== DisconnectReason.loggedOut;
             console.log(`Conexão encerrada (código ${codigoSaida}, erro: ${lastDisconnect?.error?.message || 'sem mensagem'}). Reiniciando: ${reiniciar}`);
@@ -2060,6 +2061,7 @@ async function iniciarBot() {
                     || msg.message?.extendedTextMessage?.text
                     || msg.message?.imageMessage?.caption
                     || msg.message?.videoMessage?.caption
+                    || msg.message?.documentMessage?.caption
                     || '';
 
                 stats.ultimaMensagem = new Date().toLocaleTimeString('pt-BR') + ' — ' + texto.slice(0, 50);
