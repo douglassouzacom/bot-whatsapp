@@ -446,9 +446,13 @@ let   ultimoAlertaInstagram  = 0;
 
 // Baixa mídia com timeout explícito (evita que download travado bloqueie o loop de mensagens)
 function downloadComTimeout(msgOrObj, tipo, opts, baileysOpts, ms = 60000) {
+    let timerId;
+    const timeoutP = new Promise((_, reject) => {
+        timerId = setTimeout(() => reject(new Error(`timeout: download de mídia demorou mais de ${ms / 1000}s`)), ms);
+    });
     return Promise.race([
-        downloadMediaMessage(msgOrObj, tipo, opts, baileysOpts),
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`timeout: download de mídia demorou mais de ${ms / 1000}s`)), ms)),
+        downloadMediaMessage(msgOrObj, tipo, opts, baileysOpts).finally(() => clearTimeout(timerId)),
+        timeoutP,
     ]);
 }
 
@@ -1162,7 +1166,7 @@ function gerarHtmlStatus(qrDataUrl) {
 
     <h2>🧪 Teste Manual</h2>
     ${ultimoPostInstagram
-        ? `<p style="color:#aaa">Último post: <b style="color:#fff">${ultimoPostInstagram.caption.slice(0, 60)}...</b></p>
+        ? `<p style="color:#aaa">Último post: <b style="color:#fff">${escapeHtml(ultimoPostInstagram.caption.slice(0, 60))}...</b></p>
            <a href="/vendido-teste" style="display:inline-block;background:#ff4444;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:bold;margin-top:8px">✅ Marcar último post como VENDIDO</a>`
         : `<p style="color:#888">Nenhum post feito ainda nesta sessão.<br>Aguarde um anúncio chegar do grupo Ronei Repasse.</p>`
     }
@@ -1223,7 +1227,7 @@ http.createServer(async (req, res) => {
         } catch (err) {
             res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
             res.end(`<html><body style="background:#1a1a2e;color:#ff4444;font-family:Arial;text-align:center;padding:60px">
-            <h2>❌ Erro ao apagar sessão: ${err.message}</h2>
+            <h2>❌ Erro ao apagar sessão: ${escapeHtml(err.message)}</h2>
             <a href="/" style="color:#00d4ff">Voltar</a></body></html>`);
         }
         return;
@@ -1252,13 +1256,13 @@ http.createServer(async (req, res) => {
                 res.end(`<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=/"></head>
                 <body style="background:#1a1a2e;color:#eee;font-family:Arial;text-align:center;padding:60px">
                 <h2 style="color:#00ff88">✅ Comando VENDIDO enviado com sucesso!</h2>
-                <p>Post ID: <b>${ultimoPostInstagram.postId}</b></p>
+                <p>Post ID: <b>${escapeHtml(String(ultimoPostInstagram.postId))}</b></p>
                 <p>Redirecionando para o painel...</p></body></html>`);
                 registrarSucesso('Teste/Vendido', `Post ${ultimoPostInstagram.postId} marcado via painel`);
             } catch (err) {
                 res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end(`<html><body style="background:#1a1a2e;color:#ff4444;font-family:Arial;text-align:center;padding:60px">
-                <h2>❌ Erro: ${err.message}</h2><a href="/" style="color:#00d4ff">Voltar</a></body></html>`);
+                <h2>❌ Erro: ${escapeHtml(err.message)}</h2><a href="/" style="color:#00d4ff">Voltar</a></body></html>`);
             }
         } else {
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
