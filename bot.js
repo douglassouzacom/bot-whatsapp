@@ -1897,12 +1897,20 @@ async function iniciarBot() {
         return;
     }
 
-    const sock = makeWASocket({
-        auth: state,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: false,
-        keepAliveIntervalMs: 10000,   // ping a cada 10s p/ segurar a conexao (reduz quedas por inatividade)
-    });
+    let sock;
+    try {
+        sock = makeWASocket({
+            auth: state,
+            logger: pino({ level: 'silent' }),
+            printQRInTerminal: false,
+            keepAliveIntervalMs: 10000,
+        });
+    } catch (err) {
+        registrarErro('Sessão/Socket', `Falha ao criar socket Baileys: ${err.message}`);
+        botRodando = false;
+        setTimeout(iniciarBot, 5000);
+        return;
+    }
     sockAtual = sock;
 
     sock.ev.on('creds.update', saveCreds);
@@ -2200,9 +2208,13 @@ process.on('SIGTERM', () => {
 // Captura erros não tratados para evitar queda silenciosa do processo.
 process.on('uncaughtException', err => {
     registrarErro('Processo', `uncaughtException: ${err.message}`);
+    // Garante que botRodando nao fique preso como true apos erro durante inicializacao
+    if (stats.status !== 'conectado') botRodando = false;
+    try { fs.writeFileSync(MSGS_PROCESSADAS_FILE, JSON.stringify({ ts: Date.now(), ids: [...msgIdsProcessados] })); } catch {}
 });
 process.on('unhandledRejection', reason => {
     registrarErro('Processo', `unhandledRejection: ${reason}`);
+    if (stats.status !== 'conectado') botRodando = false;
 });
 
 iniciarBot().catch(err => {
