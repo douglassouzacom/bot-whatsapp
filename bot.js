@@ -1062,7 +1062,7 @@ let ultimoPostInstagram = restaurarUltimoPost();
 const msgIdsProcessados = new Set();
 
 // Persistência dos IDs processados (sobrevive a restarts — cobre reconexões do Baileys
-// que re-entregam mensagens recentes após queda). Salva a cada 5min; restaura IDs com
+// que re-entregam mensagens recentes após queda). Salva a cada 1min; restaura IDs com
 // menos de 1h no boot, pra cobrir o janela de re-entrega sem lotar o disco.
 const MSGS_PROCESSADAS_FILE = path.join(DATA_DIR, 'msgs_processadas.json');
 (function carregarMsgsProcessadas() {
@@ -2061,7 +2061,7 @@ async function iniciarBot() {
                 }
 
                 if (msg.key.fromMe) continue;
-                if (msg.key.remoteJid !== grupoOrigemId) continue;
+                if (!grupoOrigemId || msg.key.remoteJid !== grupoOrigemId) continue;
                 if (!grupoDestinoId) {
                     registrarErro('Mensagem', 'grupoDestinoId ainda não resolvido — mensagem ignorada (aguardando buscarGrupos)');
                     continue;
