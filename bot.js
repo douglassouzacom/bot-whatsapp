@@ -503,7 +503,7 @@ async function prepararImagemInstagram(buffer) {
 
 // Formata a legenda do Instagram: cabeçalho + corpo + CTA + hashtags separadas
 function formatarLegendaInstagram(texto) {
-    const corpo = texto.trim();
+    const corpo = texto.trim().slice(0, 1900); // Instagram: máx 2200 chars; header+hashtags ocupam ~300
     return `🚗 MINAS BRASIL REPASSE
 
 ${corpo}
@@ -612,7 +612,7 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
 }
 
 // Marca post do Instagram como VENDIDO (adiciona comentário ou atualiza legenda)
-async function marcarVendidoNoInstagram(stanzaIdCitado) {
+async function marcarVendidoNoInstagram(stanzaIdCitado, tentativa = 1) {
     try {
         const dado = instagramPosts.get(stanzaIdCitado);
 
@@ -636,7 +636,12 @@ async function marcarVendidoNoInstagram(stanzaIdCitado) {
         salvarInstagramPosts();
 
     } catch (err) {
-        registrarErro('Make/Vendido', err.message);
+        registrarErro('Make/Vendido', `Tentativa ${tentativa}: ${err.message}`);
+        if (tentativa < 3) {
+            setTimeout(() => marcarVendidoNoInstagram(stanzaIdCitado, tentativa + 1), 15000 * tentativa);
+        } else {
+            registrarErro('Make/Vendido', `FALHOU 3x — VENDIDO não marcado no Instagram: stanzaId ${stanzaIdCitado}`);
+        }
     }
 }
 
@@ -1966,6 +1971,7 @@ async function iniciarBot() {
     let grupoOrigemId  = _cachedGrupos.origemId  || null;
     let grupoDestinoId = _cachedGrupos.destinoId || null;
     let grupoAvisoId   = _cachedGrupos.avisoId   || null;
+    let _6hTimerAgendado = false; // evita duplicar o timer de re-verificação quando há retries
 
     async function buscarGrupos() {
         if (minhaGeracao !== geracaoBot) return;   // socket obsoleto — nao vira zumbi
@@ -1998,13 +2004,18 @@ async function iniciarBot() {
                 };
                 salvarGrupos(_cachedGrupos);
                 // Re-verifica grupos a cada 6h para detectar renomeação ou remoção do bot
-                // sem precisar de reconexão (falha silenciosa mais comum em prod)
-                setTimeout(() => {
-                    if (minhaGeracao === geracaoBot && stats.status === 'conectado') {
-                        console.log('🔍 Re-verificando grupos (check periódico 6h)...');
-                        buscarGrupos();
-                    }
-                }, 6 * 60 * 60 * 1000);
+                // sem precisar de reconexão (falha silenciosa mais comum em prod).
+                // Flag evita criar múltiplos timers quando buscarGrupos é chamada em retries.
+                if (!_6hTimerAgendado) {
+                    _6hTimerAgendado = true;
+                    setTimeout(() => {
+                        _6hTimerAgendado = false;
+                        if (minhaGeracao === geracaoBot && stats.status === 'conectado') {
+                            console.log('🔍 Re-verificando grupos (check periódico 6h)...');
+                            buscarGrupos();
+                        }
+                    }, 6 * 60 * 60 * 1000);
+                }
             }
 
             if (grupoAvisoId) {
@@ -2213,7 +2224,8 @@ process.on('uncaughtException', err => {
     try { fs.writeFileSync(MSGS_PROCESSADAS_FILE, JSON.stringify({ ts: Date.now(), ids: [...msgIdsProcessados] })); } catch {}
 });
 process.on('unhandledRejection', reason => {
-    registrarErro('Processo', `unhandledRejection: ${reason}`);
+    const msg = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
+    registrarErro('Processo', `unhandledRejection: ${msg}`);
     if (stats.status !== 'conectado') botRodando = false;
 });
 
