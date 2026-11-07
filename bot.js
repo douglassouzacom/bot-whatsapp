@@ -102,7 +102,7 @@ setInterval(() => {
     const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
     let removidos = 0;
     for (const [id, dado] of instagramPosts.entries()) {
-        if (new Date(dado.hora).getTime() < limite) {
+        if (new Date(dado.hora || 0).getTime() < limite) {
             instagramPosts.delete(id);
             removidos++;
         }
@@ -222,6 +222,7 @@ let ultimoAlertaDisco = 0;
 // Inicializado aqui para evitar TDZ: alertarDiscoCritico (abaixo) é chamada
 // em faxinaSessao('boot') antes que a declaração original (mais abaixo) fosse alcançada.
 let sockAtual = null;
+let buscarGruposAgora = null; // exposta por iniciarBot para o endpoint /forcar-busca-grupos
 
 function contarArquivosSessao() {
     try { return fs.readdirSync(SESSAO_DIR).length; } catch { return 0; }
@@ -367,7 +368,7 @@ setInterval(() => {
     const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
     let removidos = 0;
     for (const [id, dado] of postsGrupo8.entries()) {
-        if (new Date(dado.hora).getTime() < limite) {
+        if (new Date(dado.hora || 0).getTime() < limite) {
             postsGrupo8.delete(id);
             removidos++;
         }
@@ -744,7 +745,7 @@ function verificarInstagramPendente() {
     let mudou = false;
     for (const [, d] of instagramPosts) {
         if (d.postId || d.alertado) continue;
-        const idade = agora - new Date(d.hora).getTime();
+        const idade = agora - new Date(d.hora || 0).getTime();
         if (idade <= CONFIRMACAO_TIMEOUT_MS) continue;   // ainda dentro do prazo, espera
         d.alertado = true;                               // marca pra nao repetir o aviso
         mudou = true;
@@ -1705,6 +1706,24 @@ http.createServer(async (req, res) => {
         return;
     }
 
+    // Força re-busca dos grupos sem reiniciar o bot: /forcar-busca-grupos
+    if (reqPath === '/forcar-busca-grupos') {
+        if (!sockAtual || !sockAtual.user) {
+            res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: false, erro: 'Bot sem conexão com o WhatsApp agora' }));
+            return;
+        }
+        if (!buscarGruposAgora) {
+            res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: false, erro: 'buscarGrupos não disponível (bot inicializando)' }));
+            return;
+        }
+        buscarGruposAgora();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: true, mensagem: 'Busca de grupos iniciada — aguarde alguns segundos e confira /grupos' }));
+        return;
+    }
+
     // Diagnóstico de grupos: /grupos — mostra o status dos grupos configurados
     if (reqPath === '/grupos') {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -2039,6 +2058,7 @@ async function iniciarBot() {
             if (minhaGeracao === geracaoBot && stats.status === 'conectado') setTimeout(buscarGrupos, 10000);
         }
     }
+    buscarGruposAgora = buscarGrupos; // exposta para o endpoint /forcar-busca-grupos
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
@@ -2062,7 +2082,7 @@ async function iniciarBot() {
                 // tambem batem aqui, mas nao casam a regex do "SIM N", entao sao ignoradas.
                 if (ehDoDouglas(msg.key.remoteJid)) {
                     const t = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
-                    const m = t.match(/^sim\s*(\d+)$/i);
+                    const m = t.match(/^sim\s*(\d+)[.!?]?$/i);
                     if (m) {
                         registrarSucesso('Ads', `Recebi "SIM ${m[1]}" do Douglas — subindo o anuncio`);
                         const resposta = await adsAprovar(Number(m[1]));
