@@ -1136,6 +1136,7 @@ function gerarHtmlStatus(qrDataUrl) {
       <div class="card"><div class="num">${stats.instagramFalha}</div><div class="label">❌ Instagram Falha (total)</div></div>
       <div class="card"><div class="num">${imagensCache.size}</div><div class="label">🖼️ Imagens em Cache</div></div>
       <div class="card"><div class="num">${instagramPosts.size}</div><div class="label">🔖 Posts IG Mapeados</div></div>
+      ${(() => { const pend = [...instagramPosts.values()].filter(d => d && !d.postId).length; const cor = pend > 0 ? '#ffaa00' : '#00ff88'; return `<div class="card" style="border-color:${cor}"><div class="num" style="color:${cor}">${pend}</div><div class="label">⏳ IG Sem Confirmação${pend > 0 ? ' ⚠️' : ''}</div></div>`; })()}
       <div class="card"><div class="num">${postsGrupo8.size}</div><div class="label">📋 Posts Grupo8</div></div>
       ${(() => { const qtd = contarArquivosSessao(); const cor = qtd >= LIMIAR_ALERTA ? '#ff4444' : qtd >= LIMIAR_FAXINA ? '#ffaa00' : '#00ff88'; return `<div class="card" style="border-color:${cor}"><div class="num" style="color:${cor}">${qtd}</div><div class="label">💾 Arquivos Sessão${qtd >= LIMIAR_FAXINA ? ' ⚠️' : ''}</div></div>`; })()}
     </div>
@@ -1603,6 +1604,7 @@ http.createServer(async (req, res) => {
             mensagensReencaminhadas: stats.mensagensReencaminhadas,
             instagramPostado: stats.instagramPostado,
             instagramFalha: stats.instagramFalha,
+            instagramPendentes: [...instagramPosts.values()].filter(d => d && !d.postId).length,
             diaReencaminhadas: stats.diaReencaminhadas,
             diaPostado: stats.diaPostado,
             diaFalha: stats.diaFalha,
