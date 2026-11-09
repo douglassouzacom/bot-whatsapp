@@ -1609,6 +1609,7 @@ http.createServer(async (req, res) => {
             diaPostado: stats.diaPostado,
             diaFalha: stats.diaFalha,
             filaRetry: stats.filaRetry.length,
+            startedAt: stats.iniciadoEm,
             arquivosSessao: contarArquivosSessao(),
             grupos: {
                 origemEncontrado: !!stats.grupos.origemNome,
@@ -2071,9 +2072,9 @@ async function iniciarBot() {
             if (_msgId) {
                 msgIdsProcessados.add(_msgId);
                 if (msgIdsProcessados.size > 500) {
-                    // Trim batch: remove 100 entradas mais antigas de uma vez para lidar com bursts
-                    const iter = msgIdsProcessados.values();
-                    for (let i = 0; i < 100; i++) msgIdsProcessados.delete(iter.next().value);
+                    const recentes = [...msgIdsProcessados].slice(-400);
+                    msgIdsProcessados.clear();
+                    for (const id of recentes) msgIdsProcessados.add(id);
                 }
             }
             try {
