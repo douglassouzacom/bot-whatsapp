@@ -129,9 +129,9 @@ if (!_BASE_URL_EXTERNA) {
     );
 }
 
-function gerarUrlImagem(buffer) {
+function gerarUrlImagem(buffer, contentType = 'image/jpeg') {
     const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    imagensCache.set(token, { buffer, criadoEm: Date.now() });
+    imagensCache.set(token, { buffer, criadoEm: Date.now(), contentType });
     const baseUrl = (_BASE_URL_EXTERNA || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
     return { token, url: `${baseUrl}/img/${token}.jpg` };
 }
@@ -541,7 +541,7 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
         return;
     }
     try {
-        const { url } = gerarUrlImagem(buffer);
+        const { url } = gerarUrlImagem(buffer, tipo === 'video' ? 'video/mp4' : 'image/jpeg');
         const payload = tipo === 'video'
             ? { action: 'post_video', caption: legenda, videoUrl: url, stanzaId }
             : { action: 'post',       caption: legenda, imageUrl: url, stanzaId };
@@ -1395,7 +1395,7 @@ http.createServer(async (req, res) => {
         const token = reqPath.slice(5).replace(/\.jpg$/i, '');
         const dado = imagensCache.get(token);
         if (dado) {
-            res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' });
+            res.writeHead(200, { 'Content-Type': dado.contentType || 'image/jpeg', 'Cache-Control': 'no-cache' });
             res.end(dado.buffer);
         } else {
             res.writeHead(404);
@@ -1779,7 +1779,7 @@ setInterval(async () => {
     } catch (err) {
         console.warn(`⚠️  Keep-alive falhou: ${err.message}`);
     }
-}, 12 * 60 * 1000);
+}, 10 * 60 * 1000);
 
 // Watchdog: detecta bot parado sem reconexão agendada e força restart.
 // Cobre edge cases onde botRodando fica false mas nenhum setTimeout foi criado.
@@ -1822,7 +1822,8 @@ Viu algum carro? *Me chama no privado.*
 *Douglas Souza — Minas Brasil Repasse* 🚗`;
 
 function ajustarPrecos(texto) {
-    return texto.replace(/(R\$\s?)?(\d{1,3}(?:[.,]\d{3})+)(\s*km\b)?/gi, (match, prefixo, valorStr, kmSufixo) => {
+    // Passo 1: números formatados com separador de milhar (50.000 ou 50,000)
+    let result = texto.replace(/(R\$\s?)?(\d{1,3}(?:[.,]\d{3})+)(\s*km\b)?/gi, (match, prefixo, valorStr, kmSufixo) => {
         if (kmSufixo && !prefixo) return match; // quilometragem sem R$: não ajusta
         const limpo  = valorStr.replace(/\./g, '').replace(',', '.');
         const numero = parseFloat(limpo);
@@ -1831,6 +1832,15 @@ function ajustarPrecos(texto) {
         const novoStr = novo.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
         return (prefixo || '') + novoStr + (kmSufixo || '');
     });
+    // Passo 2: valores sem separador mas com R$ explícito (ex: R$ 50000)
+    result = result.replace(/R\$\s*(\d{5,7})\b/gi, (match, valorStr) => {
+        const numero = parseInt(valorStr, 10);
+        if (isNaN(numero)) return match;
+        const novo    = numero + ACRESCIMO;
+        const novoStr = novo.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        return 'R$ ' + novoStr;
+    });
+    return result;
 }
 
 // Handle global — cancelado e recriado a cada reconexão para evitar timers duplicados
