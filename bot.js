@@ -25,6 +25,7 @@ const stats = {
     mensagensReencaminhadas: 0,
     instagramPostado: 0,
     instagramFalha: 0,
+    anunciosAbaixouPreco: 0,
     erros: [],
     ultimaMensagem: null,
     ultimoInstagram: null,
@@ -1146,6 +1147,7 @@ function gerarHtmlStatus(qrDataUrl) {
       <div class="card"><div class="num">${stats.diaReencaminhadas}</div><div class="label">📤 Reencaminhadas hoje</div></div>
       <div class="card"><div class="num">${stats.diaPostado}</div><div class="label">📸 Instagram OK hoje</div></div>
       <div class="card"><div class="num">${stats.diaFalha}</div><div class="label">❌ Falhas Instagram hoje</div></div>
+      <div class="card"><div class="num">${stats.anunciosAbaixouPreco}</div><div class="label">💲 Filtrados (baixou preço)</div></div>
     </div>
 
     <h2>📡 Grupos WhatsApp</h2>
@@ -1618,6 +1620,9 @@ http.createServer(async (req, res) => {
                 origemNome: stats.grupos.origemNome || null,
                 destinoNome: stats.grupos.destinoNome || null,
                 avisoNome: stats.grupos.avisoNome || null,
+                origemFromCache: !stats.grupos.origemNome && !!_cachedGrupos.origemId,
+                destinoFromCache: !stats.grupos.destinoNome && !!_cachedGrupos.destinoId,
+                avisoFromCache: !stats.grupos.avisoNome && !!_cachedGrupos.avisoId,
             },
         }));
         return;
@@ -1770,7 +1775,7 @@ http.createServer(async (req, res) => {
     console.log('🌐 Painel de monitoramento rodando na porta ' + (process.env.PORT || 3000));
 });
 
-// Keep-alive: pinga o próprio /health a cada 12 minutos para não adormecer no Render.com.
+// Keep-alive: pinga o próprio /health a cada 10 minutos para não adormecer no Render.com.
 // Usa localhost como fallback quando RENDER_EXTERNAL_URL não está configurado.
 setInterval(async () => {
     const url = _BASE_URL_EXTERNA || `http://localhost:${process.env.PORT || 3000}`;
@@ -2212,6 +2217,7 @@ async function iniciarBot() {
                     if (tipoMidia === 'image' || tipoMidia === 'video') {
                         if (isAnuncioAbaixouPreco(textoAjustado)) {
                             console.log('💲 Redução de preço detectada — NÃO postando no Instagram');
+                            stats.anunciosAbaixouPreco++;
                         } else {
                             const stanzaId = msg.key.id;
                             const legendaIG = formatarLegendaInstagram(textoAjustado);
