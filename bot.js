@@ -31,6 +31,8 @@ const stats = {
     ultimoInstagram: null,
     reconexoes: 0,
     status: 'iniciando',
+    ultimaConexao: null,
+    ultimaDesconexao: null,
     // contadores diários — resetam à meia-noite
     diaPostado: 0,
     diaFalha: 0,
@@ -1171,6 +1173,8 @@ function gerarHtmlStatus(qrDataUrl) {
           ? '<b style="color:#00ff88">' + escapeHtml(WHATSAPP_ALERTA) + '</b>'
           : '<b style="color:#ffaa00">⚠️ próprio bot — configure WHATSAPP_ALERTA no Render</b>'} &nbsp;<a href="/testar-alerta" style="color:#00d4ff">testar</a></li>
       <li>🕐 Bot iniciado em: ${new Date(stats.iniciadoEm).toLocaleString('pt-BR')}</li>
+      <li>🟢 Última conexão: ${stats.ultimaConexao ? new Date(stats.ultimaConexao).toLocaleString('pt-BR') : 'nunca nesta sessão'}</li>
+      <li>🔴 Última desconexão: ${stats.ultimaDesconexao ? new Date(stats.ultimaDesconexao).toLocaleString('pt-BR') : 'nenhuma'}</li>
     </ul>
 
     <h2>🧪 Teste Manual</h2>
@@ -1596,7 +1600,10 @@ http.createServer(async (req, res) => {
 
     // Health check: /health — retorna JSON para monitoramento externo e keep-alive
     if (reqPath === '/health') {
-        const httpStatus = stats.status === 'conectado' ? 200 : 503;
+        // Grace period: 503 somente após 3 min desconectado; evita restart do Render durante reconexão transitória
+        const desconectadoMs = stats.ultimaDesconexao && stats.status !== 'conectado'
+            ? Date.now() - new Date(stats.ultimaDesconexao).getTime() : 0;
+        const httpStatus = stats.status === 'conectado' || desconectadoMs < 3 * 60 * 1000 ? 200 : 503;
         res.writeHead(httpStatus, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             status: stats.status,
@@ -1612,6 +1619,8 @@ http.createServer(async (req, res) => {
             diaFalha: stats.diaFalha,
             filaRetry: stats.filaRetry.length,
             startedAt: stats.iniciadoEm,
+            ultimaConexao: stats.ultimaConexao,
+            ultimaDesconexao: stats.ultimaDesconexao,
             arquivosSessao: contarArquivosSessao(),
             grupos: {
                 origemEncontrado: !!stats.grupos.origemNome,
@@ -1967,6 +1976,7 @@ async function iniciarBot() {
         if (connection === 'open') {
             ultimoQR = null;
             stats.status = 'conectado';
+            stats.ultimaConexao = new Date().toISOString();
             falhasConsecutivas = 0;            // reconectou: zera o contador de falhas
             _destinoAlertaCache = null;        // força re-resolução do JID com o novo socket
             console.log('\n✅ Bot conectado!\n');
@@ -1974,6 +1984,7 @@ async function iniciarBot() {
         }
         if (connection === 'close') {
             stats.status = 'desconectado';
+            stats.ultimaDesconexao = new Date().toISOString();
             botRodando = false;
             sockAtual = null;
             const codigoSaida = lastDisconnect?.error?.output?.statusCode;
