@@ -2021,12 +2021,16 @@ async function iniciarBot() {
     let grupoAvisoId   = _cachedGrupos.avisoId   || null;
     let _6hTimerAgendado = false; // evita duplicar o timer de re-verificação quando há retries
 
+    let _buscarGruposEmAndamento = false;
     async function buscarGrupos() {
         if (minhaGeracao !== geracaoBot) return;   // socket obsoleto — nao vira zumbi
+        if (_buscarGruposEmAndamento) return;      // evita chamadas concorrentes (reconexão + /forcar-busca-grupos)
+        _buscarGruposEmAndamento = true;
         try {
+            let _fetchGruposTimer;
             const grupos = await Promise.race([
-                sock.groupFetchAllParticipating(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout 30s em groupFetchAllParticipating')), 30000)),
+                sock.groupFetchAllParticipating().finally(() => clearTimeout(_fetchGruposTimer)),
+                new Promise((_, reject) => { _fetchGruposTimer = setTimeout(() => reject(new Error('timeout 30s em groupFetchAllParticipating')), 30000); }),
             ]);
             for (const [id, info] of Object.entries(grupos)) {
                 const nome = info.subject.toLowerCase();
@@ -2085,6 +2089,8 @@ async function iniciarBot() {
             // Sem a segunda condição, o retry dispararia contra um socket já fechado
             // (durante uma reconexão), gerando erros desnecessários nos logs.
             if (minhaGeracao === geracaoBot && stats.status === 'conectado') setTimeout(buscarGrupos, 10000);
+        } finally {
+            _buscarGruposEmAndamento = false;
         }
     }
     buscarGruposAgora = buscarGrupos; // exposta para o endpoint /forcar-busca-grupos
@@ -2139,8 +2145,8 @@ async function iniciarBot() {
                 stats.ultimaMensagem = new Date().toLocaleTimeString('pt-BR') + ' — ' + texto.slice(0, 50);
 
                 const textoLower  = texto.toLowerCase();
-                const isVendido   = textoLower.includes('vendido');
-                const isReservado = textoLower.includes('reservado');
+                const isVendido   = textoLower.includes('vendido')   && !/(não|nao)\s+(?:\S+\s+)?vendido/.test(textoLower);
+                const isReservado = textoLower.includes('reservado') && !/(não|nao)\s+(?:\S+\s+)?reservado/.test(textoLower);
 
                 // ── VENDIDO / RESERVADO ──────────────────────────────────────
                 if (isVendido || isReservado) {
