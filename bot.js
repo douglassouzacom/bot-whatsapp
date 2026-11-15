@@ -611,6 +611,8 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
             registrarErro('Make/Post', `FALHOU 3x: ${legenda.slice(0, 40)}`);
             stats.filaRetry = stats.filaRetry.filter(f => f.stanzaId !== stanzaId);
             salvarFilaRetry();
+            // Webhook falhou 3x sem registrar o stanzaId → alerta direto (sem depender do timer de confirmação)
+            alertarFalhaInstagram(legenda);
         }
     }
 }
@@ -2044,7 +2046,11 @@ async function iniciarBot() {
             if (!grupoAvisoId)   { registrarErro('Grupos', 'AVISO não encontrado: '   + GRUPO_AVISO_NOME);   grupoFaltando.push(`AVISO (${GRUPO_AVISO_NOME})`); }
             if (grupoFaltando.length) {
                 alertarGrupoFaltando(grupoFaltando);
-                if (minhaGeracao === geracaoBot && stats.status === 'conectado') setTimeout(buscarGrupos, 30000);
+                // Só faz retry curto (30s) se ORIGEM ou DESTINO estiver faltando.
+                // Se só o AVISO falta, o check periódico de 6h já cobre — sem isso o bot
+                // fica chamando buscarGrupos a cada 30s indefinidamente se AVISO nunca aparecer.
+                const critico = grupoFaltando.some(g => g.startsWith('ORIGEM') || g.startsWith('DESTINO'));
+                if (critico && minhaGeracao === geracaoBot && stats.status === 'conectado') setTimeout(buscarGrupos, 30000);
             }
 
             if (grupoOrigemId && grupoDestinoId) {
