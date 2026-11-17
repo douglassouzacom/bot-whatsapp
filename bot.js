@@ -29,6 +29,7 @@ const stats = {
     erros: [],
     ultimaMensagem: null,
     ultimoInstagram: null,
+    ultimoAvisoMatinal: null,
     reconexoes: 0,
     status: 'iniciando',
     ultimaConexao: null,
@@ -592,8 +593,6 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
         salvarFilaRetry();
 
     } catch (err) {
-        stats.instagramFalha++;
-        stats.diaFalha++;
         registrarErro('Make/Post', `Tentativa ${tentativa}: ${err.message}`);
 
         if (tentativa < 3) {
@@ -608,6 +607,8 @@ async function enviarMidiaParaMake(buffer, legenda, stanzaId, tipo = 'image', te
             salvarFilaRetry();
             setTimeout(() => enviarMidiaParaMake(buffer, legenda, stanzaId, tipo, tentativa + 1), espera);
         } else {
+            stats.instagramFalha++;
+            stats.diaFalha++;
             registrarErro('Make/Post', `FALHOU 3x: ${legenda.slice(0, 40)}`);
             stats.filaRetry = stats.filaRetry.filter(f => f.stanzaId !== stanzaId);
             salvarFilaRetry();
@@ -1171,6 +1172,7 @@ function gerarHtmlStatus(qrDataUrl) {
     <ul>
       <li>💬 Última mensagem: ${escapeHtml(stats.ultimaMensagem || 'nenhuma ainda')}</li>
       <li>📸 Último Instagram: ${escapeHtml(stats.ultimoInstagram || 'nenhum ainda')}</li>
+      <li>📢 Último aviso matinal: ${escapeHtml(stats.ultimoAvisoMatinal || 'nenhum nesta sessão')}</li>
       <li>🔔 Alarme aponta para: ${WHATSAPP_ALERTA
           ? '<b style="color:#00ff88">' + escapeHtml(WHATSAPP_ALERTA) + '</b>'
           : '<b style="color:#ffaa00">⚠️ próprio bot — configure WHATSAPP_ALERTA no Render</b>'} &nbsp;<a href="/testar-alerta" style="color:#00d4ff">testar</a></li>
@@ -1695,7 +1697,7 @@ http.createServer(async (req, res) => {
             for (const n of nomes) {
                 const chave = n === 'creds.json'
                     ? 'creds'
-                    : (n.match(/^(pre-key|session|sender-key|app-state-sync-key|app-state-sync-version)/)?.[1] || 'outros');
+                    : (n.match(/^(pre-key|session|sender-key|app-state-sync-key|app-state-sync-version|lid-mapping|device-list)/)?.[1] || 'outros');
                 comp[chave] = (comp[chave] || 0) + 1;
             }
             out.totalArquivos = nomes.length;
@@ -1895,6 +1897,7 @@ function agendarAvisoMatinal(sock, grupoAvisoId) {
                 _avisoMatinalPendente = { grupoAvisoId, agendadoEm: new Date().toISOString() };
             } else {
                 await s.sendMessage(grupoAvisoId, { text: TEXTO_AVISO });
+                stats.ultimoAvisoMatinal = new Date().toLocaleString('pt-BR');
                 registrarSucesso('Aviso Matinal', 'Enviado com sucesso!');
                 _avisoMatinalPendente = null;
             }
@@ -2083,7 +2086,7 @@ async function iniciarBot() {
                     const atrasado = Date.now() - new Date(_avisoMatinalPendente.agendadoEm).getTime();
                     if (atrasado <= 2 * 60 * 60 * 1000) {
                         sock.sendMessage(grupoAvisoId, { text: TEXTO_AVISO })
-                            .then(() => registrarSucesso('Aviso Matinal', `Aviso atrasado enviado (${Math.floor(atrasado / 60000)}min de atraso)`))
+                            .then(() => { stats.ultimoAvisoMatinal = new Date().toLocaleString('pt-BR'); registrarSucesso('Aviso Matinal', `Aviso atrasado enviado (${Math.floor(atrasado / 60000)}min de atraso)`); })
                             .catch(err => registrarErro('Aviso Matinal', `Falhou ao reenviar aviso atrasado: ${err.message}`));
                     }
                     _avisoMatinalPendente = null;
