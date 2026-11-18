@@ -755,6 +755,7 @@ function verificarInstagramPendente() {
         if (idade <= CONFIRMACAO_TIMEOUT_MS) continue;   // ainda dentro do prazo, espera
         d.alertado = true;                               // marca pra nao repetir o aviso
         mudou = true;
+        console.warn(`⚠️ Instagram não confirmou stanzaId=${[...instagramPosts].find(([k,v]) => v === d)?.[0] || '?'} após ${Math.floor(idade/60000)}min`);
         if (idade <= JANELA_ALERTA_MAX_MS) alertarFalhaInstagram(d.caption || '(sem legenda)');
     }
     if (mudou) salvarInstagramPosts();
@@ -1618,6 +1619,8 @@ http.createServer(async (req, res) => {
             instagramPostado: stats.instagramPostado,
             instagramFalha: stats.instagramFalha,
             instagramPendentes: [...instagramPosts.values()].filter(d => d && !d.postId).length,
+            postsGrupo8Count: postsGrupo8.size,
+            historicoAdsCount: historicoAds.length,
             diaReencaminhadas: stats.diaReencaminhadas,
             diaPostado: stats.diaPostado,
             diaFalha: stats.diaFalha,
@@ -1770,7 +1773,7 @@ http.createServer(async (req, res) => {
     }
 
     // Painel principal
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, no-store' });
     if (ultimoQR) {
         const qrDataUrl = await QRCode.toDataURL(ultimoQR);
         res.end(gerarHtmlStatus(qrDataUrl));
@@ -1798,6 +1801,17 @@ setInterval(async () => {
         console.warn(`⚠️  Keep-alive falhou: ${err.message}`);
     }
 }, 10 * 60 * 1000);
+
+// Log horário de stats no stdout — útil para acompanhar via Render.com logs.
+setInterval(() => {
+    const uptime = Math.floor((Date.now() - new Date(stats.iniciadoEm)) / 3600000);
+    console.log(
+        `📊 [STATS HORA] status=${stats.status} | uptime=${uptime}h | ` +
+        `recebidas=${stats.mensagensRecebidas} | reencaminhadas=${stats.mensagensReencaminhadas} | ` +
+        `igOK=${stats.instagramPostado} | igFalha=${stats.instagramFalha} | ` +
+        `reconexoes=${stats.reconexoes} | sessaoArqs=${contarArquivosSessao()}`
+    );
+}, 60 * 60 * 1000);
 
 // Watchdog: detecta bot parado sem reconexão agendada e força restart.
 // Cobre edge cases onde botRodando fica false mas nenhum setTimeout foi criado.
@@ -2289,8 +2303,9 @@ process.on('uncaughtException', err => {
     try { fs.writeFileSync(MSGS_PROCESSADAS_FILE, JSON.stringify({ ts: Date.now(), ids: [...msgIdsProcessados] })); } catch {}
 });
 process.on('unhandledRejection', reason => {
+    const tipo = reason instanceof Error ? reason.name : typeof reason;
     const msg = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
-    registrarErro('Processo', `unhandledRejection: ${msg}`);
+    registrarErro('Processo', `unhandledRejection [${tipo}]: ${msg}`);
     if (stats.status !== 'conectado') botRodando = false;
 });
 
