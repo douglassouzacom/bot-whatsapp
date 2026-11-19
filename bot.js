@@ -749,13 +749,13 @@ async function alertarFalhaInstagram(legenda) {
 function verificarInstagramPendente() {
     const agora = Date.now();
     let mudou = false;
-    for (const [, d] of instagramPosts) {
+    for (const [stanzaId, d] of instagramPosts) {
         if (d.postId || d.alertado) continue;
         const idade = agora - new Date(d.hora || 0).getTime();
         if (idade <= CONFIRMACAO_TIMEOUT_MS) continue;   // ainda dentro do prazo, espera
         d.alertado = true;                               // marca pra nao repetir o aviso
         mudou = true;
-        console.warn(`⚠️ Instagram não confirmou stanzaId=${[...instagramPosts].find(([k,v]) => v === d)?.[0] || '?'} após ${Math.floor(idade/60000)}min`);
+        console.warn(`⚠️ Instagram não confirmou stanzaId=${stanzaId} após ${Math.floor(idade/60000)}min`);
         if (idade <= JANELA_ALERTA_MAX_MS) alertarFalhaInstagram(d.caption || '(sem legenda)');
     }
     if (mudou) salvarInstagramPosts();
