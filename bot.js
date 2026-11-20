@@ -148,15 +148,16 @@ function fmtBytes(b) {
     return (b / 1073741824).toFixed(2) + ' GB';
 }
 
-function tamanhoPasta(dir) {
+function tamanhoPasta(dir, _depth = 0) {
     let bytes = 0, arquivos = 0;
+    if (_depth > 15) return { bytes, arquivos }; // evita loop infinito em symlinks circulares
     try {
         for (const nome of fs.readdirSync(dir)) {
             const p = path.join(dir, nome);
             let st;
             try { st = fs.statSync(p); } catch { continue; }
             if (st.isDirectory()) {
-                const sub = tamanhoPasta(p);
+                const sub = tamanhoPasta(p, _depth + 1);
                 bytes += sub.bytes; arquivos += sub.arquivos;
             } else {
                 bytes += st.size; arquivos += 1;
@@ -1046,7 +1047,9 @@ setInterval(() => {
     if (sp.getDay() !== ADS_DIA_SEMANA || sp.getHours() < ADS_HORA) return;
     const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     try { if (fs.existsSync(ARQ_ULTIMO_ADS) && fs.readFileSync(ARQ_ULTIMO_ADS, 'utf8').trim() === hoje) return; } catch {}
-    try { fs.writeFileSync(ARQ_ULTIMO_ADS, hoje); } catch {}
+    let adsDedup = false;
+    try { fs.writeFileSync(ARQ_ULTIMO_ADS, hoje); adsDedup = true; } catch (e) { console.error('ads dedup write:', e.message); }
+    if (!adsDedup) return; // se não conseguiu marcar como enviado, não envia (evita spam em disco cheio)
     adsEnviarPacote();
     adsImpulsionarAuto();   // se ADS_AUTO=1, impulsiona sozinho o melhor da semana (senao nao faz nada)
 }, 30 * 60 * 1000);
@@ -1792,11 +1795,11 @@ http.createServer(async (req, res) => {
 });
 
 // Keep-alive: pinga o próprio /health a cada 10 minutos para não adormecer no Render.com.
-// Usa localhost como fallback quando RENDER_EXTERNAL_URL não está configurado.
+// Sempre usa localhost — evita round-trip desnecessário pelo CDN externo.
 setInterval(async () => {
-    const url = _BASE_URL_EXTERNA || `http://localhost:${process.env.PORT || 3000}`;
+    const url = `http://localhost:${process.env.PORT || 3000}`;
     try {
-        await axios.get(`${url.replace(/\/$/, '')}/health`, { timeout: 10000, validateStatus: () => true });
+        await axios.get(`${url}/health`, { timeout: 10000, validateStatus: () => true });
     } catch (err) {
         console.warn(`⚠️  Keep-alive falhou: ${err.message}`);
     }
