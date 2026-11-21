@@ -1085,10 +1085,10 @@ const MSGS_PROCESSADAS_FILE = path.join(DATA_DIR, 'msgs_processadas.json');
     try {
         if (!fs.existsSync(MSGS_PROCESSADAS_FILE)) return;
         const { ts, ids } = JSON.parse(fs.readFileSync(MSGS_PROCESSADAS_FILE, 'utf8'));
-        if (Date.now() - ts > 60 * 60 * 1000) return; // arquivo com mais de 1h: ignora
+        if (Date.now() - ts > 2 * 60 * 60 * 1000) return; // arquivo com mais de 2h: ignora
         let carregados = 0;
         for (const id of ids) { if (id) { msgIdsProcessados.add(id); carregados++; } }
-        if (carregados > 0) console.log(`📂 ${carregados} IDs de msgs processadas restaurados do disco (< 1h)`);
+        if (carregados > 0) console.log(`📂 ${carregados} IDs de msgs processadas restaurados do disco (< 2h)`);
     } catch (e) { console.error('Erro ao carregar msgs_processadas.json:', e.message); }
 })();
 setInterval(() => {
@@ -2171,8 +2171,8 @@ async function iniciarBot() {
                 stats.ultimaMensagem = new Date().toLocaleTimeString('pt-BR') + ' — ' + texto.slice(0, 50);
 
                 const textoLower  = texto.toLowerCase();
-                const isVendido   = textoLower.includes('vendido')   && !/(não|nao)\s+(?:\S+\s+)?vendido/.test(textoLower);
-                const isReservado = textoLower.includes('reservado') && !/(não|nao)\s+(?:\S+\s+)?reservado/.test(textoLower);
+                const isVendido   = textoLower.includes('vendido')   && !/(não|nao)\s+(?:\S+\s+){0,3}vendido/.test(textoLower);
+                const isReservado = textoLower.includes('reservado') && !/(não|nao)\s+(?:\S+\s+){0,3}reservado/.test(textoLower);
 
                 // ── VENDIDO / RESERVADO ──────────────────────────────────────
                 if (isVendido || isReservado) {
@@ -2290,7 +2290,10 @@ async function iniciarBot() {
 // Encerramento gracioso no Render (SIGTERM antes de cada novo deploy).
 // Fecha o socket sem fazer logout — a sessão salva no disco é reutilizada
 // na próxima inicialização, evitando um QR desnecessário.
+let _sigtermCalled = false;
 process.on('SIGTERM', () => {
+    if (_sigtermCalled) return;
+    _sigtermCalled = true;
     console.log('📴 SIGTERM recebido — encerrando graciosamente...');
     stats.status = 'encerrando';
     if (sockAtual) { try { sockAtual.end(undefined); } catch {} }
