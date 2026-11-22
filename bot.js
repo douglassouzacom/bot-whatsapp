@@ -44,10 +44,12 @@ const stats = {
 };
 
 function registrarErro(contexto, mensagem) {
-    const entrada = { hora: new Date().toLocaleTimeString('pt-BR'), contexto, mensagem };
+    const msgStr = String(mensagem);
+    const msgPainel = msgStr.split('\n')[0].slice(0, 400); // primeira linha, máx 400 chars para o painel
+    const entrada = { hora: new Date().toLocaleTimeString('pt-BR'), contexto, mensagem: msgPainel };
     stats.erros.unshift(entrada);
     if (stats.erros.length > 20) stats.erros.pop();
-    console.error(`❌ [${contexto}] ${mensagem}`);
+    console.error(`❌ [${contexto}] ${msgStr}`);
 }
 
 function registrarSucesso(contexto, mensagem) {
@@ -1301,7 +1303,16 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && reqPath === '/webhook-instagram-id') {
         let body = '';
         const BODY_LIMIT = 65536; // 64 KB — stanzaId+postId é bem menor; rejeita payloads absurdos
+        const bodyTimer = setTimeout(() => {
+            if (!res.headersSent) {
+                registrarErro('Webhook/Body', 'Timeout de 30s aguardando body — conexão descartada');
+                res.writeHead(408, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ erro: 'timeout aguardando body' }));
+            }
+            req.destroy();
+        }, 30000);
         req.on('error', (err) => {
+            clearTimeout(bodyTimer);
             registrarErro('Webhook/Body', err.message);
             if (!res.headersSent) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1311,6 +1322,7 @@ http.createServer(async (req, res) => {
         req.on('data', chunk => {
             body += chunk;
             if (body.length > BODY_LIMIT) {
+                clearTimeout(bodyTimer);
                 registrarErro('Webhook/Body', `Payload muito grande (${body.length} bytes) — descartado`);
                 if (!res.headersSent) {
                     res.writeHead(413, { 'Content-Type': 'application/json' });
@@ -1320,6 +1332,7 @@ http.createServer(async (req, res) => {
             }
         });
         req.on('end', () => {
+            clearTimeout(bodyTimer);
             if (res.headersSent) return; // resposta já enviada (ex.: payload ultrapassou limite)
             try {
                 const { stanzaId, postId } = JSON.parse(body);
@@ -1953,6 +1966,7 @@ function apagarSessaoEReiniciar() {
     }
     ultimoQR = null;
     botRodando = false;
+    stats.grupos = { origemNome: null, destinoNome: null, avisoNome: null };
     setTimeout(iniciarBot, 2000);
 }
 
@@ -2298,6 +2312,8 @@ process.on('SIGTERM', () => {
     stats.status = 'encerrando';
     if (sockAtual) { try { sockAtual.end(undefined); } catch {} }
     try { fs.writeFileSync(MSGS_PROCESSADAS_FILE, JSON.stringify({ ts: Date.now(), ids: [...msgIdsProcessados] })); } catch {}
+    salvarInstagramPosts();
+    salvarPostsGrupo8();
     setTimeout(() => process.exit(0), 2000);
 });
 
