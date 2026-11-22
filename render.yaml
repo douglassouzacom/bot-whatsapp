@@ -11,6 +11,20 @@ services:
         sync: false
       - key: MAKE_WEBHOOK_VENDIDO
         sync: false
+      - key: WHATSAPP_ALERTA
+        sync: false
+      - key: ACRESCIMO
+        sync: false
+      - key: HORA_AVISO
+        sync: false
+      - key: MINUTO_AVISO
+        sync: false
+      - key: GRUPO_ORIGEM_NOME
+        sync: false
+      - key: GRUPO_DESTINO_NOME
+        sync: false
+      - key: GRUPO_AVISO_NOME
+        sync: false
     disk:
       name: whatsapp-data
       mountPath: /data

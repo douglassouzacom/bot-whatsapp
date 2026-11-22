@@ -2063,6 +2063,14 @@ async function iniciarBot() {
         if (_buscarGruposEmAndamento) return;      // evita chamadas concorrentes (reconexão + /forcar-busca-grupos)
         _buscarGruposEmAndamento = true;
         try {
+            // Reseta os nomes antes da busca: se um grupo foi renomeado/removido,
+            // o painel deve mostrar "NÃO ENCONTRADO" e não o nome antigo.
+            // Os IDs (grupoOrigemId etc.) mantêm o valor em cache para não parar
+            // de processar mensagens durante retries — só os nomes no painel são zerados.
+            stats.grupos.origemNome  = null;
+            stats.grupos.destinoNome = null;
+            stats.grupos.avisoNome   = null;
+
             let _fetchGruposTimer;
             const grupos = await Promise.race([
                 sock.groupFetchAllParticipating().finally(() => clearTimeout(_fetchGruposTimer)),
@@ -2075,9 +2083,9 @@ async function iniciarBot() {
                 if (nome.includes(GRUPO_AVISO_NOME.toLowerCase()))   { grupoAvisoId   = id; stats.grupos.avisoNome   = info.subject; registrarSucesso('Grupos', 'Aviso:   ' + info.subject); }
             }
             const grupoFaltando = [];
-            if (!grupoOrigemId)  { registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);  grupoFaltando.push(`ORIGEM (${GRUPO_ORIGEM_NOME})`); }
-            if (!grupoDestinoId) { registrarErro('Grupos', 'DESTINO não encontrado: ' + GRUPO_DESTINO_NOME); grupoFaltando.push(`DESTINO (${GRUPO_DESTINO_NOME})`); }
-            if (!grupoAvisoId)   { registrarErro('Grupos', 'AVISO não encontrado: '   + GRUPO_AVISO_NOME);   grupoFaltando.push(`AVISO (${GRUPO_AVISO_NOME})`); }
+            if (!stats.grupos.origemNome)  { registrarErro('Grupos', 'ORIGEM não encontrado: '  + GRUPO_ORIGEM_NOME);  grupoFaltando.push(`ORIGEM (${GRUPO_ORIGEM_NOME})`); }
+            if (!stats.grupos.destinoNome) { registrarErro('Grupos', 'DESTINO não encontrado: ' + GRUPO_DESTINO_NOME); grupoFaltando.push(`DESTINO (${GRUPO_DESTINO_NOME})`); }
+            if (!stats.grupos.avisoNome)   { registrarErro('Grupos', 'AVISO não encontrado: '   + GRUPO_AVISO_NOME);   grupoFaltando.push(`AVISO (${GRUPO_AVISO_NOME})`); }
             if (grupoFaltando.length) {
                 alertarGrupoFaltando(grupoFaltando);
                 // Só faz retry curto (30s) se ORIGEM ou DESTINO estiver faltando.
