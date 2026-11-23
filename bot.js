@@ -1726,7 +1726,7 @@ http.createServer(async (req, res) => {
             const prefixosOutros = {};
             for (const n of nomes) {
                 const eOutro = n !== 'creds.json'
-                    && !/^(pre-key|session|sender-key|app-state-sync-key|app-state-sync-version)/.test(n);
+                    && !/^(pre-key|session|sender-key|app-state-sync-key|app-state-sync-version|lid-mapping|device-list)/.test(n);
                 if (eOutro) {
                     let pref = n.split(/\d/)[0];
                     if (!pref) pref = '(começa-com-dígito)';
