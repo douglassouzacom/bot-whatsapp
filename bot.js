@@ -2181,6 +2181,12 @@ async function iniciarBot() {
                     continue;
                 }
 
+                // Ignora mensagens de protocolo do Baileys/WhatsApp — não são anúncios de veículos
+                // (recibos de leitura, reações, distribuição de chaves Signal, atualizações de enquete)
+                const _msgTipo = msg.message ? Object.keys(msg.message)[0] : null;
+                if (!_msgTipo || ['protocolMessage', 'reactionMessage', 'senderKeyDistributionMessage',
+                                   'messageContextInfo', 'pollUpdateMessage'].includes(_msgTipo)) continue;
+
                 stats.mensagensRecebidas++;
 
                 const texto = msg.message?.conversation
