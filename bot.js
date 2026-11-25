@@ -26,6 +26,7 @@ const stats = {
     instagramPostado: 0,
     instagramFalha: 0,
     anunciosAbaixouPreco: 0,
+    diaAnunciosAbaixouPreco: 0,
     erros: [],
     ultimaMensagem: null,
     ultimoInstagram: null,
@@ -93,11 +94,13 @@ function agendarLogDiario() {
             `📊 [RESUMO DO DIA ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}] ` +
             `Reencaminhadas: ${stats.diaReencaminhadas} | ` +
             `Instagram OK: ${stats.diaPostado} | ` +
-            `Falhas: ${stats.diaFalha}`
+            `Falhas: ${stats.diaFalha} | ` +
+            `Filtrados (baixou preço): ${stats.diaAnunciosAbaixouPreco}`
         );
         stats.diaPostado = 0;
         stats.diaFalha = 0;
         stats.diaReencaminhadas = 0;
+        stats.diaAnunciosAbaixouPreco = 0;
         agendarLogDiario(); // reagenda para a próxima meia-noite
     }, msAteAmanha);
 }
@@ -1158,7 +1161,7 @@ function gerarHtmlStatus(qrDataUrl) {
       <div class="card"><div class="num">${stats.diaReencaminhadas}</div><div class="label">📤 Reencaminhadas hoje</div></div>
       <div class="card"><div class="num">${stats.diaPostado}</div><div class="label">📸 Instagram OK hoje</div></div>
       <div class="card"><div class="num">${stats.diaFalha}</div><div class="label">❌ Falhas Instagram hoje</div></div>
-      <div class="card"><div class="num">${stats.anunciosAbaixouPreco}</div><div class="label">💲 Filtrados (baixou preço)</div></div>
+      <div class="card"><div class="num">${stats.diaAnunciosAbaixouPreco}</div><div class="label">💲 Filtrados hoje (baixou preço)</div></div>
     </div>
 
     <h2>📡 Grupos WhatsApp</h2>
@@ -1637,9 +1640,11 @@ http.createServer(async (req, res) => {
             instagramPendentes: [...instagramPosts.values()].filter(d => d && !d.postId).length,
             postsGrupo8Count: postsGrupo8.size,
             historicoAdsCount: historicoAds.length,
+            anunciosAbaixouPreco: stats.anunciosAbaixouPreco,
             diaReencaminhadas: stats.diaReencaminhadas,
             diaPostado: stats.diaPostado,
             diaFalha: stats.diaFalha,
+            diaAnunciosAbaixouPreco: stats.diaAnunciosAbaixouPreco,
             filaRetry: stats.filaRetry.length,
             startedAt: stats.iniciadoEm,
             ultimaConexao: stats.ultimaConexao,
@@ -2289,6 +2294,7 @@ async function iniciarBot() {
                         if (isAnuncioAbaixouPreco(textoAjustado)) {
                             console.log('💲 Redução de preço detectada — NÃO postando no Instagram');
                             stats.anunciosAbaixouPreco++;
+                            stats.diaAnunciosAbaixouPreco++;
                         } else {
                             const stanzaId = msg.key.id;
                             const legendaIG = formatarLegendaInstagram(textoAjustado);
