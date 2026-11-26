@@ -2005,16 +2005,28 @@ async function iniciarBot() {
     }
     sockAtual = sock;
 
+    // Guarda de segurança: se em 2min nenhum connection.update disparar (open/close/qr),
+    // o socket pode estar travado — desbloqueamos botRodando para o watchdog reiniciar.
+    let _connTimer = setTimeout(() => {
+        if (minhaGeracao !== geracaoBot || stats.status === 'conectado') return;
+        registrarErro('Boot/Timeout', 'Nenhum connection.update em 2min — desbloqueando botRodando para reconexão');
+        botRodando = false;
+        try { sock.end(new Error('conn-timeout')); } catch {}
+        setTimeout(iniciarBot, 5000);
+    }, 2 * 60 * 1000);
+
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
         if (qr) {
+            clearTimeout(_connTimer); // QR recebido — usuário precisa de tempo pra escanear
             ultimoQR = qr;
             stats.status = 'aguardando_qr';
             console.log('\n📱 Acesse a URL do serviço no Render para escanear o QR Code!\n');
             qrcode.generate(qr, { small: true });
         }
         if (connection === 'open') {
+            clearTimeout(_connTimer);
             ultimoQR = null;
             stats.status = 'conectado';
             stats.ultimaConexao = new Date().toISOString();
@@ -2024,6 +2036,7 @@ async function iniciarBot() {
             setTimeout(buscarGrupos, 3000);
         }
         if (connection === 'close') {
+            clearTimeout(_connTimer);
             stats.status = 'desconectado';
             stats.ultimaDesconexao = new Date().toISOString();
             botRodando = false;
