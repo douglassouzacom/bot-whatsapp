@@ -1144,6 +1144,18 @@ function gerarHtmlStatus(qrDataUrl) {
     &nbsp;|&nbsp; 🔄 Reconexões: ${stats.reconexoes}
     &nbsp;|&nbsp; <small>Atualiza em 15s</small></p>
 
+    <p style="font-size:12px;margin:0 0 12px 0;color:#666">
+      🔍 <a href="/health" style="color:#00d4ff">health</a>
+      &nbsp;·&nbsp;<a href="/disco" style="color:#00d4ff">disco</a>
+      &nbsp;·&nbsp;<a href="/sessao-info" style="color:#00d4ff">sessão</a>
+      &nbsp;·&nbsp;<a href="/grupos" style="color:#00d4ff">grupos</a>
+      &nbsp;·&nbsp;<a href="/forcar-busca-grupos" style="color:#00d4ff">re-buscar grupos</a>
+      &nbsp;·&nbsp;<a href="/aprendizado" style="color:#00d4ff">aprendizado</a>
+      &nbsp;&nbsp;⚙️ <a href="/forcar-reconexao" style="color:#ffaa00">forçar reconexão</a>
+      &nbsp;·&nbsp;<a href="/qr" style="color:#ffaa00">ver QR</a>
+      &nbsp;·&nbsp;<a href="/reset-sessao" style="color:#ff4444">reset sessão</a>
+    </p>
+
     <div class="grid">
       <div class="card"><div class="num">${stats.mensagensRecebidas}</div><div class="label">📨 Recebidas (total)</div></div>
       <div class="card"><div class="num">${stats.mensagensReencaminhadas}</div><div class="label">📤 Reencaminhadas (total)</div></div>
@@ -1766,6 +1778,29 @@ http.createServer(async (req, res) => {
         buscarGruposAgora();
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: true, mensagem: 'Busca de grupos iniciada — aguarde alguns segundos e confira /grupos' }));
+        return;
+    }
+
+    // Força reconexão sem apagar sessão: /forcar-reconexao
+    // Útil quando o bot mostra "conectado" mas não processa mensagens (socket zumbi).
+    if (reqPath === '/forcar-reconexao') {
+        const socketEstavivo = !!(sockAtual && sockAtual.user);
+        if (sockAtual) {
+            try { sockAtual.end(new Error('reconexao-forcada')); } catch {}
+            sockAtual = null;
+        }
+        botRodando = false;
+        stats.status = 'reiniciando';
+        registrarSucesso('Reconexão', `Reconexão forçada pelo painel (socket estava ${socketEstavivo ? 'vivo' : 'morto'})`);
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="6;url=/">
+        <style>body{font-family:Arial,sans-serif;text-align:center;padding:60px;background:#1a1a2e;color:#eee}
+        h2{color:#00ff88}</style></head>
+        <body><h2>🔄 Reconexão iniciada!</h2>
+        <p>Socket anterior estava ${socketEstavivo ? '<b style="color:#00ff88">vivo</b>' : '<b style="color:#ff4444">morto</b>'}.</p>
+        <p>O bot vai reconectar em instantes <em>(sem apagar a sessão)</em>.</p>
+        <p>Redirecionando para <a href="/" style="color:#00d4ff">o painel</a> em 6 segundos...</p></body></html>`);
+        setTimeout(() => iniciarBot(), 1000);
         return;
     }
 
